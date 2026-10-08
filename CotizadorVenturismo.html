@@ -616,6 +616,15 @@ const fLong = s => { const d = pd(s); return d ? `${d.getDate()} de ${MESES[d.ge
 const fMonth = s => { const d = pd(s); return d ? `${MESES[d.getMonth()]} ${d.getFullYear()}`.toUpperCase() : ''; };
 function nights(a, b) { const x = pd(a), y = pd(b); if (!x || !y) return 0; return Math.round((y - x) / 864e5); }
 const nightsOf = d => (d.fecha_modo === 'mes' ? num(d.noches) : (nights(d.entrada, d.salida) || num(d.noches)));
+/* duración real de un vuelo: siempre se calcula de cuándo despega a cuándo aterriza (con o sin escalas en medio) */
+function flightDur(f1, h1, f2, h2) {
+  const t1 = pd(f1), t2 = pd(f2 || f1), m1 = /^(\d{1,2}):(\d{2})$/.exec(str(h1)), m2 = /^(\d{1,2}):(\d{2})$/.exec(str(h2));
+  if (!t1 || !t2 || !m1 || !m2) return '';
+  const mins = Math.round((+t2 + (+m2[1] * 60 + +m2[2]) * 6e4 - (+t1 + (+m1[1] * 60 + +m1[2]) * 6e4)) / 6e4);
+  if (mins < 0 || mins > 2880) return '';
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return [h ? h + ' h' : '', m ? m + ' m' : ''].filter(Boolean).join(' ') || '0 m';
+}
 function durText(n) { return n > 0 ? `${n + 1} ${n + 1 === 1 ? 'día' : 'días'} / ${n} ${n === 1 ? 'noche' : 'noches'}` : ''; }
 function money(n) { return '$' + (Math.round(n * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function plural(n, s, p) { return `${n} ${n === 1 ? s : p}`; }
@@ -1200,12 +1209,12 @@ function flightAtoms(d) {
     const rt = o.tipo !== 'Solo ida', base = { aerolinea: o.aerolinea, clase: o.clase, checkin: o.checkin, eq_mochila: o.eq_mochila, eq_mano: o.eq_mano, eq_doc: o.eq_doc };
     a.push(bSection([ops.length > 1 ? 'Opción ' + (i + 1) : 'Vuelo', str(o.titulo), rt ? 'Ida y vuelta' : 'Solo ida'].filter(Boolean).join(' · '), 'plane'));
     if (rt) a.push(bLegLabel('Ida'));
-    a.push(bFlightCard(Object.assign({}, base, { tipo: 'Ida', vuelo: o.vuelo_ida, duracion: o.duracion_ida, fecha_salida: o.fecha_ida, hora_salida: t12(o.hora_sal_ida), fecha_llegada: o.fecha_lleg_ida || o.fecha_ida, hora_llegada: t12(o.hora_lleg_ida), cod_salida: o.cod_origen, ciudad_salida: o.ciudad_origen, aer_salida: o.aer_origen, cod_llegada: o.cod_destino, ciudad_llegada: o.ciudad_destino, aer_llegada: o.aer_destino })));
+    a.push(bFlightCard(Object.assign({}, base, { tipo: 'Ida', vuelo: o.vuelo_ida, duracion: flightDur(o.fecha_ida, o.hora_sal_ida, o.fecha_lleg_ida || o.fecha_ida, o.hora_lleg_ida) || o.duracion_ida, fecha_salida: o.fecha_ida, hora_salida: t12(o.hora_sal_ida), fecha_llegada: o.fecha_lleg_ida || o.fecha_ida, hora_llegada: t12(o.hora_lleg_ida), cod_salida: o.cod_origen, ciudad_salida: o.ciudad_origen, aer_salida: o.aer_origen, cod_llegada: o.cod_destino, ciudad_llegada: o.ciudad_destino, aer_llegada: o.aer_destino })));
     const rI = bRoute({ tipo: 'ida', stops: o.esc_ida, vuelo: o.vuelo_ida, from: { t: t12(o.hora_sal_ida), label: lab(o.cod_origen, o.ciudad_origen) }, to: { t: t12(o.hora_lleg_ida), label: lab(o.cod_destino, o.ciudad_destino) } }); if (rI) a.push(rI);
     let rV = null;
     if (rt) {
       a.push(bLegLabel('Vuelta'));
-      a.push(bFlightCard(Object.assign({}, base, { tipo: 'Vuelta', vuelo: o.vuelo_vta, duracion: o.duracion_vta, fecha_salida: o.fecha_vta, hora_salida: t12(o.hora_sal_vta), fecha_llegada: o.fecha_lleg_vta || o.fecha_vta, hora_llegada: t12(o.hora_lleg_vta), cod_salida: o.cod_destino, ciudad_salida: o.ciudad_destino, aer_salida: o.aer_destino, cod_llegada: o.cod_origen, ciudad_llegada: o.ciudad_origen, aer_llegada: o.aer_origen })));
+      a.push(bFlightCard(Object.assign({}, base, { tipo: 'Vuelta', vuelo: o.vuelo_vta, duracion: flightDur(o.fecha_vta, o.hora_sal_vta, o.fecha_lleg_vta || o.fecha_vta, o.hora_lleg_vta) || o.duracion_vta, fecha_salida: o.fecha_vta, hora_salida: t12(o.hora_sal_vta), fecha_llegada: o.fecha_lleg_vta || o.fecha_vta, hora_llegada: t12(o.hora_lleg_vta), cod_salida: o.cod_destino, ciudad_salida: o.ciudad_destino, aer_salida: o.aer_destino, cod_llegada: o.cod_origen, ciudad_llegada: o.ciudad_origen, aer_llegada: o.aer_origen })));
       rV = bRoute({ tipo: 'vuelta', stops: o.esc_vta, vuelo: o.vuelo_vta, from: { t: t12(o.hora_sal_vta), label: lab(o.cod_destino, o.ciudad_destino) }, to: { t: t12(o.hora_lleg_vta), label: lab(o.cod_origen, o.ciudad_origen) } }); if (rV) a.push(rV);
     }
     const det = [].concat(rI ? [] : escRows(o.esc_ida, o.escalas_ida, 'ida'), rt && !rV ? escRows(o.esc_vta, o.escalas_vta, 'vuelta') : [], [['Código de reservación', o.pnr], ['Incluye', o.incluye], ['Precio de esta opción', o.precio], ['Nota', o.nota]].filter(r => has(r[1])).map(r => ({ etiqueta: r[0], valor: str(r[1]) })));
