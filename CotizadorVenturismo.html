@@ -513,12 +513,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     <details class="import" id="import">
       <summary>Cargar un documento o pegar datos</summary>
       <div class="impbody">
-        <label class="dz" id="dropzone">Arrastra aquí un PDF, Word, imagen o texto, o haz clic para elegir
-          <input type="file" id="impfile" multiple accept=".pdf,.docx,.txt,.md,.csv,.json,.eml,.html,image/*"></label>
+        <label class="dz" id="dropzone">Arrastra aquí tu PDF (o Word / texto), o haz clic para elegir
+          <input type="file" id="impfile" multiple accept=".pdf,.docx,.txt,.md,.csv,.eml,.html"></label>
         <div class="chips" id="impfiles"></div>
         <div class="field"><label for="imptext" id="imptextlbl">O pega aquí los datos (por ejemplo, un mensaje de WhatsApp o un correo)</label><textarea id="imptext" rows="4"></textarea></div>
-        <label class="check" id="impautolbl"><input type="checkbox" id="impauto" checked><span>Detectar el tipo de cotización automáticamente</span></label>
-        <p class="hint" id="impnote" hidden>Aquí se reconoce el mensaje con íconos (📍 📅 👫 🛏 🍽 🏨 💰 ⚠) para cotizaciones de hotel. Para leer PDF, Word, imágenes o cualquier otro tipo de cotización, usa la versión dentro de Claude o pásame el documento en el chat.</p>
+                <p class="hint" id="impnote">Los datos se cargan en la plantilla que tengas elegida arriba. Los PDF descargados desde este cotizador se restauran exactos; con otros PDF con texto se leen destino, itinerario, tarifas, incluye, hoteles, condiciones y notas.</p>
         <div class="inline"><button type="button" class="btn primary" id="impgo">Leer datos</button><button type="button" class="btn" id="impstop" hidden>Detener</button></div>
         <p class="impmsg" id="impmsg" role="status" aria-live="polite"></p>
       </div>
@@ -561,6 +560,7 @@ const GRAD = [[0, '#8C3154'], [.13, '#B34F3F'], [.257, '#DB6E35'], [.383, '#E592
   [.635, '#747E65'], [.762, '#235588'], [.888, '#377CA3'], [1, '#408FB0']];
 const FN = { R: 'VVReg', M: 'VVMed', B: 'VVBold', I: 'VVLoraIt' };
 const CONTACT = [['insta', '@venturismovalladolid'], ['ph', '443 942 0246'], ['ml', 'venturismovalladolid.oficina@gmail.com']];
+const ADDRESS = 'Capitán Mariano Anzurez #125, Morelia, Mich.';
 const PHRASE = 'Que se cumpla el sueño de tener este lugar frente a tus ojos';
 const TAGLINE = 'AUTORES DE SUEÑOS';
 const PHOTO_H = 150;
@@ -722,7 +722,7 @@ function bClient(d) {
 }
 function bPhoto(o) {
   return atom(PHOTO_H, (out, y) => {
-    IMG(out, 'photo', LX, y, CW, PHOTO_H);
+    IMG(out, o.id || 'photo', LX, y, CW, PHOTO_H);
     const n = Math.max(0, Math.min(5, num(o.stars)));
     for (let i = 0; i < n; i++) IC.star(out, LX + 20 + i * 12, y + PHOTO_H - 62, 10, C.amber);
     if (o.name) T(out, LX + 20, y + PHOTO_H - 28, o.name, FN.B, 18, C.white);
@@ -850,13 +850,14 @@ function bTransferLeg(o) { // {origen,destino,tipo,fecha,hora,strip[]}
 function bItinDay(day, i) {
   const label = has(day.dia) ? (/^\d+$/.test(str(day.dia)) ? 'Día ' + str(day.dia) : str(day.dia)) : 'Día ' + (i + 1);
   const tl = wrap(day.titulo, FN.B, 9.5, CW - 76), xl = wrap(day.texto, FN.R, 8.3, CW - 76);
-  const H = 12 + Math.max(tl.length, 1) * 13 + (xl.length ? 4 + xl.length * 12.2 : 0) + 12;
+  const PH = day.foto ? Math.round((CW - 72) * PHOTO_H / CW) : 0, H = 12 + Math.max(tl.length, 1) * 13 + (xl.length ? 4 + xl.length * 12.2 : 0) + 12 + (PH ? PH + 10 : 0);
   return atom(H, (out, y) => {
     const cw = Math.max(50, tw(FN.B, 8, label) + 20);
     R(out, LX, y + 8, cw, 20, { r: 10, fill: C.tint, stroke: C.line, lw: .8 });
     T(out, LX + cw / 2, y + 21.5, label, FN.B, 8, C.ink, { a: 'c' });
     tl.forEach((ln, k) => T(out, LX + 72, y + 21 + k * 13, ln, FN.B, 9.5, C.ink));
     xl.forEach((ln, k) => T(out, LX + 72, y + 21 + (tl.length - 1) * 13 + 15 + k * 12.2, ln, FN.R, 8.3, C.body));
+    if (PH) IMG(out, day._pid || 'photo', LX + 72, y + H - PH - 10, CW - 72, PH);
     L(out, LX + 72, y + H - 1, RX, y + H - 1, '#E6E6E8', .7);
   }, { gap: 0 });
 }
@@ -900,18 +901,21 @@ function bPax(rows) {
   });
 }
 
-function bDetail(rows) { // etiqueta / valor
-  const rr = rows.filter(r => has(r.etiqueta) && has(r.valor));
+function bDetail(rows) { // etiqueta / valor (+ precio opcional a la derecha, grande y en negritas)
+  const rr = rows.filter(r => has(r.etiqueta) && (has(r.valor) || has(r.precio)));
   if (!rr.length) return null;
-  const laid = rr.map(r => wrap(r.valor, FN.M, 8.8, CW * .58 - 18));
-  const H = 10 + laid.reduce((s, l) => s + Math.max(28, 14 + l.length * 12), 0);
+  const pw = r => has(r.precio) ? tw(FN.B, 12.5, str(r.precio)) + (has(r.cur) ? tw(FN.R, 7, str(r.cur)) + 5 : 0) + 18 : 0;
+  const laid = rr.map(r => wrap(str(r.valor), FN.M, 8.8, CW * .58 - 18 - pw(r)));
+  const rhs = laid.map((l, i) => Math.max(has(rr[i].precio) ? 34 : 28, 14 + Math.max(l.length, 1) * 12));
+  const H = 10 + rhs.reduce((t0, v) => t0 + v, 0);
   return atom(H, (out, y) => {
     card(out, LX, y, CW, H);
     let yy = y + 5;
     rr.forEach((r, i) => {
-      const rh = Math.max(28, 14 + laid[i].length * 12);
+      const rh = rhs[i];
       T(out, LX + 18, yy + 18, str(r.etiqueta), FN.R, 8.3, C.gray);
       laid[i].forEach((ln, k) => T(out, LX + CW * .38, yy + 18 + k * 12, ln, FN.M, 8.8, C.ink));
+      if (has(r.precio)) { let px = RX - 18; if (has(r.cur)) { T(out, px, yy + 19, str(r.cur), FN.R, 7, C.gray, { a: 'r' }); px -= tw(FN.R, 7, str(r.cur)) + 5; } T(out, px, yy + 19.5, str(r.precio), FN.B, 12.5, C.ink, { a: 'r' }); }
       if (i < rr.length - 1) L(out, LX + 12, yy + rh, RX - 12, yy + rh, '#E6E6E8', .8);
       yy += rh;
     });
@@ -1051,16 +1055,60 @@ function metaLine(d) {
 function tailAtoms(d, pm) {
   const a = [];
   if (pm.rows.length) { a.push(bSection(d.tipo_doc === 'reservacion' ? 'Importe' : 'Tarifa', 'coin')); a.push(bPrice(pm)); }
+  const mr = (d.p_menores || []).filter(r => has(r.edades) || has(r.tarifa));
+  if (mr.length) { a.push(bSection('Tarifa de menores', 'people')); a.push(bDetail(mr.map(r => ({ etiqueta: str(r.edades) || 'Menores', valor: [str(r.tarifa), str(r.nota)].filter(Boolean).join(' · ') || ' ' })))); }
   if (d.cond_mostrar && has(d.cond_pago)) a.push(bText('Condiciones de pago', d.cond_pago, 'coin'));
   if (d.vig_mostrar && (has(d.vig_fecha) || has(d.vig_texto))) {
     a.push(bText('Vigencia de la cotización', [has(d.vig_fecha) ? 'Válida hasta el ' + fLong(d.vig_fecha) + '.' : '', str(d.vig_texto)].filter(Boolean).join(' '), 'calendar'));
   }
+  if (has(d.condiciones)) a.push(bText('Condiciones', d.condiciones, 'note'));
+  if (has(d.notas)) a.push(bText('Notas importantes', d.notas, 'note'));
   if (has(d.observaciones)) a.push(bText('Observaciones', d.observaciones, 'note'));
   if (has(d.aviso)) a.push(bNote(d.aviso));
   return a;
 }
 function clientAtoms(d) { return d.cliente_mostrar && has(d.cliente_nombre) ? [bClient(d)] : []; }
-function listAtoms(d) { const l = bLists((d.incluye || []).map(str).filter(Boolean), (d.no_incluye || []).map(str).filter(Boolean)); return l ? [l] : []; }
+function listAtoms(d) { const l = bLists((d.incluye || []).map(str).filter(Boolean), (d.no_incluye || []).map(str).filter(Boolean)); return itinAtoms(d).concat(tableAtoms(d, 'tp', 'coin', 'Tarifas por categoría'), l ? [l] : [], tableAtoms(d, 'th', 'hotel', 'Hoteles previstos o similares')); }
+function bTable(head, rows, note) {
+  const n = head.length, w0 = n > 3 ? CW * .22 : CW * .28, wc = (CW - w0) / (n - 1), ws = head.map((_, i) => i ? wc : w0), xs = []; let ax = 0;
+  ws.forEach((w, i) => { xs[i] = LX + ax; ax += w; });
+  const hl = head.map((t, i) => wrap(upper(t), FN.B, 6.8, ws[i] - 16, .5).slice(0, 3)), hh = 14 + Math.max(1, ...hl.map(l => l.length)) * 9;
+  const rl = rows.map(r => r.map((c, i) => wrap(c, i ? FN.M : FN.B, 8, ws[i] - 14).slice(0, 4))), rh = rl.map(l => Math.max(26, 14 + Math.max(1, ...l.map(x => x.length)) * 10));
+  const nl = note ? wrap(note, FN.M, 7.5, CW - 8) : [], H = hh + rh.reduce((s, v) => s + v, 0);
+  return atom(H + (nl.length ? 8 + nl.length * 10 : 0), (out, y) => {
+    R(out, LX, y, CW, hh, { r: 10, fill: C.blue }); R(out, LX, y + hh - 10, CW, 10, { fill: C.blue });
+    hl.forEach((l, i) => l.forEach((ln, k) => T(out, i ? xs[i] + ws[i] / 2 : xs[i] + 12, y + hh / 2 - (l.length - 1) * 4.5 + 2.5 + k * 9, ln, FN.B, 6.8, C.white, i ? { a: 'c', cs: .5 } : { cs: .5 })));
+    let yy = y + hh;
+    rl.forEach((r, ri) => { r.forEach((l, i) => l.forEach((ln, k) => T(out, i ? xs[i] + ws[i] / 2 : xs[i] + 12, yy + rh[ri] / 2 - (l.length - 1) * 5 + 3 + k * 10, ln, i ? FN.M : FN.B, 8, C.ink, i ? { a: 'c' } : {}))); yy += rh[ri]; if (ri < rl.length - 1) L(out, LX, yy, RX, yy, C.line, .7); });
+    R(out, LX, y, CW, H, { r: 10, stroke: C.line });
+    nl.forEach((ln, k) => T(out, LX + 4, y + H + 14 + k * 10, ln, FN.M, 7.5, C.gray));
+  }, { gap: 18 });
+}
+function tableAtoms(d, p, icon, def) {
+  const rows = (d[p + '_filas'] || []).filter(r => [r.c0, r.c1, r.c2, r.c3].some(has)); if (!rows.length) return [];
+  const n = rows.some(r => has(r.c3)) ? 4 : rows.some(r => has(r.c2)) ? 3 : 2, hd = str(d[p + '_cols']).split(',').map(x => x.trim());
+  return [bSection(str(d[p + '_titulo']) || def, icon), bTable(Array.from({ length: n }, (_, i) => hd[i] || ''), rows.map(r => [r.c0, r.c1, r.c2, r.c3].slice(0, n).map(str)), str(d[p + '_nota']))];
+}
+function itinAtoms(d) {
+  const it = (d.itin_dias || []).map((r, k) => Object.assign({}, r, { _pid: 'dy' + k })).filter(r => has(r.titulo) || has(r.texto) || r.foto); if (!it.length) return [];
+  const a = [bSection('Itinerario', 'flag')]; it.forEach((r, i) => a.push(bItinDay(r, i))); a[a.length - 1].gap = 18; return a;
+}
+function extraHotelAtoms(d) {
+  const a = [];
+  (d.hoteles_extra || []).forEach((r, i) => {
+    if (!has(r.nombre)) return;
+    const x = hotelAtoms({ hotel_nombre: r.nombre, estrellas: r.estrellas, hotel_ubicacion: r.ubicacion, plan: r.plan, fecha_modo: 'exacta', entrada: r.entrada, salida: r.salida, foto: r.foto, photoId: 'hx' + i, opcion_precio: r.precio,
+      adultos: d.adultos, menores: d.menores, edades: d.edades, destino: d.destino, pais: d.pais,
+      habitaciones: has(r.hab) || has(r.ocupacion) ? [{ tipo: r.hab, ocupacion: r.ocupacion, adultos: d.adultos, menores: d.menores, edades: d.edades }] : [] });
+    if (x.length) { x[0] = bSection('Hotel · Opción ' + (i + 2), 'hotel'); a.push(...x); }
+  });
+  return a;
+}
+function hotelAll(d) {
+  const h = hotelAtoms(d), e = extraHotelAtoms(d);
+  if (e.length && h.length) h[0] = bSection('Hotel · Opción 1', 'hotel');
+  return h.concat(e);
+}
 
 const uniqCI = arr => { const seen = new Set(); return arr.filter(x => { const k = x.toLowerCase(); if (!x || seen.has(k)) return false; seen.add(k); return true; }); };
 const pluW = (w, n) => (n > 1 ? (/[aeiouáéíóú]$/i.test(w) ? w + 's' : w + 'es') : w);
@@ -1076,31 +1124,105 @@ function roomSummary(rooms) {
   if (cl.length) parts.push(cl.join(' / '));
   return parts.join(' · ');
 }
+const OCC_N = { sencilla: 1, individual: 1, doble: 2, triple: 3, 'cuádruple': 4, cuadruple: 4, 'quíntuple': 5, quintuple: 5 };
+const occN = o => OCC_N[str(o).toLowerCase()] || 0;
+const roomAdults = r => num(r.adultos) || occN(r.ocupacion);
+function derivePax(rooms) { // los viajeros salen de las habitaciones: Doble = 2 adultos, Triple = 3… más los menores indicados
+  const rs = (rooms || []).filter(r => roomAdults(r) || num(r.menores)); if (!rs.length) return null;
+  return { adultos: String(rs.reduce((t0, r) => t0 + roomAdults(r), 0)), menores: String(rs.reduce((t0, r) => t0 + num(r.menores), 0)), edades: [...new Set(rs.map(r => str(r.edades)).filter(Boolean))].join(' / ') };
+}
 function roomDetail(d) {
-  const rooms = d.habitaciones || [], withPax = rooms.filter(r => num(r.adultos) || num(r.menores));
-  const minors = num(d.menores) > 0 || rooms.some(r => num(r.menores) > 0);
-  if (!withPax.length || !(rooms.length > 1 || minors)) return null;
-  const px = r => { const a = num(r.adultos), m = num(r.menores); return [a ? plural(a, 'adulto', 'adultos') : '', m ? plural(m, 'menor', 'menores') + (has(r.edades) ? ` (${str(r.edades)})` : '') : ''].filter(Boolean).join(' y '); };
-  return bDetail(rooms.map((r, i) => ({ etiqueta: `Habitación ${i + 1}`, valor: [uniqCI([str(r.ocupacion), str(r.tipo)]).join(' · '), px(r), str(r.observaciones)].filter(Boolean).join(' · ') || ' ' })));
+  const rooms = (d.habitaciones || []).filter(r => has(r.tipo) || has(r.ocupacion) || num(r.adultos) || num(r.menores) || num(r.precio));
+  const minors = rooms.some(r => num(r.menores) > 0) || num(d.menores) > 0, priced = rooms.some(r => num(r.precio));
+  if (!rooms.length || !(rooms.length > 1 || minors || priced)) return null;
+  const cur = str(d.moneda) || 'MXN';
+  const px = r => { const a = roomAdults(r), m = num(r.menores); return [a ? plural(a, 'adulto', 'adultos') : '', m ? plural(m, 'menor', 'menores') + (has(r.edades) ? ` (${str(r.edades)})` : '') : ''].filter(Boolean).join(' y '); };
+  return bDetail(rooms.map((r, i) => ({ etiqueta: `Habitación ${i + 1}`, valor: [uniqCI([str(r.ocupacion), str(r.tipo)]).join(' · '), px(r), str(r.observaciones)].filter(Boolean).join(' · '), precio: num(r.precio) ? money(num(r.precio)) : '', cur })));
 }
 function hotelAtoms(d) {
   const a = [];
   if (!has(d.hotel_nombre) && !has(d.entrada) && !has(d.salida)) return a;
   a.push(bSection('Hotel', 'hotel'));
-  const strip = [{ icon: 'bed', label: 'Habitación', value: roomSummary(d.habitaciones), wt: 1.05 }, { icon: 'people', label: 'Viajeros', value: paxText(d), wt: 1.35 }, { icon: 'utensils', label: 'Plan', value: str(d.plan), wt: .75 }];
+  const strip = [{ icon: 'bed', label: 'Habitación', value: roomSummary(d.habitaciones), wt: 1.05 }, { icon: 'people', label: 'Viajeros', value: paxText(d), wt: 1.35 }, { icon: 'utensils', label: 'Plan', value: str(d.plan), wt: .75 }, { icon: 'coin', label: 'Precio', value: str(d.opcion_precio), wt: 1 }];
   const hasPhoto = !!d.foto;
-  if (hasPhoto) a.push(bPhoto({ name: str(d.hotel_nombre), stars: d.estrellas, sub: str(d.hotel_ubicacion) || [str(d.destino), str(d.pais)].filter(Boolean).join(', ') }));
+  if (hasPhoto) a.push(bPhoto({ id: d.photoId, name: str(d.hotel_nombre), stars: d.estrellas, sub: str(d.hotel_ubicacion) || [str(d.destino), str(d.pais)].filter(Boolean).join(', ') }));
   const c = bHotelCard({ name: hasPhoto ? '' : str(d.hotel_nombre), loc: hasPhoto ? '' : str(d.hotel_ubicacion), stars: d.estrellas, entrada: d.entrada, salida: d.salida, modo: d.fecha_modo, noches: d.noches, strip });
   if (c) a.push(c);
   const rd = roomDetail(d); if (rd) { a.push(bSection('Distribución de habitaciones', 'bed')); a.push(rd); }
   if (!hasPhoto && has(d.hotel_ubicacion) && c) { /* ubicación: dentro del subtítulo del destino */ }
   return a;
 }
+const t12 = h => { const m = /^(\d{1,2}):(\d{2})$/.exec(str(h)); if (!m) return str(h); const H = +m[1]; return `${H % 12 || 12}:${m[2]} ${H >= 12 ? 'pm' : 'am'}`; };
+const hm = h => { const m = /^(\d{1,2}):(\d{2})$/.exec(str(h)); return m ? +m[1] * 60 + +m[2] : null; };
+const durTxt = mn => [Math.floor(mn / 60) ? Math.floor(mn / 60) + ' h' : '', mn % 60 ? mn % 60 + ' m' : ''].filter(Boolean).join(' ');
+const stopWait = st => { if (has(st.espera)) return str(st.espera); const a = hm(st.hora_lleg), b = hm(st.hora_sal); return a != null && b != null ? durTxt((((b - a) % 1440) + 1440) % 1440) : ''; };
+function bLegLabel(text) { return atom(20, (out, y) => { IC.plane(out, LX + 2, y + 2, 14, C.ink); T(out, LX + 24, y + 13, text, FN.M, 9.5, C.gray); }, { keepNext: true, gap: 4 }); }
+function bRoute(leg) { // línea de tiempo del tramo: salida → llegada a la escala → espera → salida de la escala → llegada
+  const st = (leg.stops || []).filter(x => has(x.lugar) || has(x.espera) || has(x.hora_lleg) || has(x.hora_sal)); if (!st.length) return null;
+  const rows = [{ k: 'pt', t: leg.from.t, p: leg.from.label, f: leg.vuelo, end: true }];
+  st.forEach(x => {
+    const timed = has(x.hora_lleg) || has(x.hora_sal);
+    if (timed) rows.push({ k: 'pt', t: t12(x.hora_lleg), p: str(x.lugar) });
+    rows.push({ k: 'band', p: str(x.lugar), w: stopWait(x), n: str(x.nota) });
+    if (timed) rows.push({ k: 'pt', t: t12(x.hora_sal), p: str(x.lugar), f: x.vuelo });
+  });
+  rows.push({ k: 'pt', t: leg.to.t, p: leg.to.label, end: true });
+  const hts = rows.map(r => r.k === 'pt' ? 22 : r.n ? 46 : 36), H = 42 + hts.reduce((u, v) => u + v, 0), ttl = `RECORRIDO ${upper(leg.tipo)} · ${st.length} ${st.length > 1 ? 'ESCALAS' : 'ESCALA'}`;
+  return atom(H, (out, y) => {
+    card(out, LX, y, CW, H); T(out, LX + 20, y + 19, ttl, FN.R, 6.2, C.grayL, { cs: .9 });
+    const x0 = LX + 26, cs = []; let yy = y + 30; rows.forEach((r, i) => { cs.push(yy + hts[i] / 2); yy += hts[i]; });
+    const pts = rows.map((r, i) => r.k === 'pt' ? cs[i] : null).filter(v => v !== null); L(out, x0, pts[0], x0, pts[pts.length - 1], '#CFCFD5', 1.2);
+    rows.forEach((r, i) => {
+      const cy = cs[i];
+      if (r.k === 'pt') {
+        R(out, x0 - 3.5, cy - 3.5, 7, 7, r.end ? { r: 3.5, fill: C.ink } : { r: 3.5, fill: C.white, stroke: C.ink, lw: 1.2 });
+        T(out, x0 + 16, cy + 3, str(r.t) || '—', FN.B, 8.8, C.ink); T(out, x0 + 82, cy + 3, str(r.p), FN.M, 8.5, C.ink);
+        if (has(r.f)) T(out, RX - 18, cy + 3, 'Vuelo ' + str(r.f), FN.R, 7.2, C.gray, { a: 'r' });
+      } else {
+        const bx = x0 + 16, bw = RX - 18 - bx, bh = hts[i] - 8;
+        R(out, bx, cy - bh / 2, bw, bh, { r: 8, fill: C.tint }); IC.clock(out, bx + 12, cy - 5.5, 11, C.gray);
+        T(out, bx + 30, cy + (r.n ? -2 : 3), 'Escala' + (r.p ? ' en ' + r.p : ''), FN.M, 8.5, C.ink);
+        if (r.n) T(out, bx + 30, cy + 11, r.n, FN.R, 7.2, C.gray);
+        if (has(r.w)) T(out, bx + bw - 14, cy + (r.n ? 3 : 4.5), r.w, FN.B, 11.5, C.ink, { a: 'r' });
+      }
+    });
+  });
+}
+function escRows(rows, txt, side) {
+  const rs = (rows || []).filter(r => has(r.lugar) || has(r.espera));
+  if (rs.length) return rs.map((r, i) => ({ etiqueta: `Escala${rs.length > 1 ? ' ' + (i + 1) : ''} · ${side}`, valor: [str(r.lugar), has(r.espera) ? 'espera de ' + str(r.espera) : ''].filter(Boolean).join(' · ') }));
+  return has(txt) ? [{ etiqueta: 'Escalas · ' + side, valor: str(txt) }] : [];
+}
 function flightAtoms(d) {
-  const a = [];
-  (d.vuelos || []).filter(s => has(s.cod_salida) || has(s.ciudad_salida) || has(s.aerolinea) || has(s.fecha_salida)).forEach(seg => {
-    a.push(bSection(str(seg.tipo) || 'Vuelo', 'plane'));
-    a.push(bFlightCard(seg));
+  const a = [], ops = (d.op_vuelos || []).filter(o => has(o.cod_origen) || has(o.ciudad_origen) || has(o.aerolinea) || has(o.fecha_ida) || has(o.ciudad_destino));
+  const lab = (c, ci) => [str(c), str(ci)].filter(Boolean).join(' ');
+  ops.forEach((o, i) => {
+    const rt = o.tipo !== 'Solo ida', base = { aerolinea: o.aerolinea, clase: o.clase, checkin: o.checkin, eq_mochila: o.eq_mochila, eq_mano: o.eq_mano, eq_doc: o.eq_doc };
+    a.push(bSection([ops.length > 1 ? 'Opción ' + (i + 1) : 'Vuelo', str(o.titulo), rt ? 'Ida y vuelta' : 'Solo ida'].filter(Boolean).join(' · '), 'plane'));
+    if (rt) a.push(bLegLabel('Ida'));
+    a.push(bFlightCard(Object.assign({}, base, { tipo: 'Ida', vuelo: o.vuelo_ida, duracion: o.duracion_ida, fecha_salida: o.fecha_ida, hora_salida: t12(o.hora_sal_ida), fecha_llegada: o.fecha_lleg_ida || o.fecha_ida, hora_llegada: t12(o.hora_lleg_ida), cod_salida: o.cod_origen, ciudad_salida: o.ciudad_origen, aer_salida: o.aer_origen, cod_llegada: o.cod_destino, ciudad_llegada: o.ciudad_destino, aer_llegada: o.aer_destino })));
+    const rI = bRoute({ tipo: 'ida', stops: o.esc_ida, vuelo: o.vuelo_ida, from: { t: t12(o.hora_sal_ida), label: lab(o.cod_origen, o.ciudad_origen) }, to: { t: t12(o.hora_lleg_ida), label: lab(o.cod_destino, o.ciudad_destino) } }); if (rI) a.push(rI);
+    let rV = null;
+    if (rt) {
+      a.push(bLegLabel('Vuelta'));
+      a.push(bFlightCard(Object.assign({}, base, { tipo: 'Vuelta', vuelo: o.vuelo_vta, duracion: o.duracion_vta, fecha_salida: o.fecha_vta, hora_salida: t12(o.hora_sal_vta), fecha_llegada: o.fecha_lleg_vta || o.fecha_vta, hora_llegada: t12(o.hora_lleg_vta), cod_salida: o.cod_destino, ciudad_salida: o.ciudad_destino, aer_salida: o.aer_destino, cod_llegada: o.cod_origen, ciudad_llegada: o.ciudad_origen, aer_llegada: o.aer_origen })));
+      rV = bRoute({ tipo: 'vuelta', stops: o.esc_vta, vuelo: o.vuelo_vta, from: { t: t12(o.hora_sal_vta), label: lab(o.cod_destino, o.ciudad_destino) }, to: { t: t12(o.hora_lleg_vta), label: lab(o.cod_origen, o.ciudad_origen) } }); if (rV) a.push(rV);
+    }
+    const det = [].concat(rI ? [] : escRows(o.esc_ida, o.escalas_ida, 'ida'), rt && !rV ? escRows(o.esc_vta, o.escalas_vta, 'vuelta') : [], [['Código de reservación', o.pnr], ['Incluye', o.incluye], ['Precio de esta opción', o.precio], ['Nota', o.nota]].filter(r => has(r[1])).map(r => ({ etiqueta: r[0], valor: str(r[1]) })));
+    if (det.length) a.push(bDetail(det));
+  });
+  return a;
+}
+function transferAtoms(d) {
+  const a = [], ops = (d.op_traslados || []).filter(o => has(o.origen) || has(o.destino) || has(o.fecha_ida) || has(o.transporte));
+  ops.forEach((o, i) => {
+    const rt = o.tipo === 'Redondo', pax = has(o.pasajeros) ? plural(num(o.pasajeros), 'pasajero', 'pasajeros') : paxText(d), med = [str(o.transporte), str(o.empresa)].filter(Boolean).join(' · ');
+    const mk = (f, h1, h2) => [{ icon: 'calendar', label: 'Fecha', value: fLong(f), wt: .95 }, { icon: 'clock', label: 'Horario', value: [t12(h1), t12(h2)].filter(Boolean).join(' → '), wt: .8 }, { icon: 'car', label: 'Medio', value: med, wt: 1.3 }, { icon: 'people', label: 'Pasajeros', value: pax, wt: 1 }];
+    a.push(bSection([ops.length > 1 ? 'Opción ' + (i + 1) : 'Traslado', str(o.titulo), rt ? 'Redondo' : 'Sencillo'].filter(Boolean).join(' · '), 'car'));
+    a.push(bTransferLeg({ origen: str(o.origen), destino: str(o.destino), tipo: rt ? 'Redondo' : 'Sencillo', strip: mk(o.fecha_ida, o.hora_ida, o.hora_lleg_ida) }));
+    if (rt && (has(o.fecha_vta) || has(o.hora_vta))) a.push(bTransferLeg({ origen: str(o.destino), destino: str(o.origen), tipo: 'Regreso', strip: mk(o.fecha_vta, o.hora_vta, o.hora_lleg_vta) }));
+    const det = [['Punto de abordaje', o.punto], ['Duración', o.duracion], ['Unidad / capacidad', o.vehiculo], ['Incluye', o.incluye], ['Precio de esta opción', o.precio], ['Nota', o.nota]].filter(r => has(r[1])).map(r => ({ etiqueta: r[0], valor: str(r[1]) }));
+    if (det.length) a.push(bDetail(det));
   });
   return a;
 }
@@ -1109,21 +1231,37 @@ const TEMPLATES = {};
 
 TEMPLATES.hotel = {
   id: 'hotel', name: 'Hotel / playa', icon: 'hotel', noun: 'VIAJE',
-  desc: 'Viaje a un hotel o destino de playa: hotel, habitaciones, plan de alimentos, fechas y tarifa.',
+  desc: 'Viaje a un hotel o destino de playa: una o varias opciones de hotel, cada una con habitaciones, plan de alimentos, fechas y tarifa.',
   build(d) {
-    const pm = priceModel(d, { qtyDefault: paxN(d) || 1 });
-    const a = [bTitle({ label: 'Viaje a:', title: upper(d.destino), sub: str(d.pais), box: heroBox(d, pm) })];
-    a.push(...clientAtoms(d), ...hotelAtoms(d), ...listAtoms(d), ...tailAtoms(d, pm));
-    return { title: docHead(d, 'VIAJE'), meta: metaLine(d), pm, atoms: a, name: str(d.destino) };
+    const hs = (d.hoteles || []).map((h, i) => Object.assign({}, d, h, derivePax(h.habitaciones) || {}, { hotel_nombre: h.nombre, hotel_ubicacion: h.ubicacion, photoId: 'hh' + i, opcion_precio: '' })).filter(m => has(m.hotel_nombre) || has(m.entrada) || has(m.salida));
+    const many = hs.length > 1, imp = d.tipo_doc === 'reservacion', cur = str(d.moneda) || 'MXN', body = [];
+    hs.forEach(m => { m.pm = priceModel(m, { qtyDefault: paxN(m) || 1 }); });
+    hs.forEach((m, k) => {
+      const x = hotelAtoms(m); if (!x.length) return; if (many) x[0] = bSection('Hotel · Opción ' + (k + 1), 'hotel'); body.push(...x);
+      if (m.pm.rows.length) {
+        body.push(bSection((imp ? 'Importe' : 'Tarifa') + (many ? ' · Opción ' + (k + 1) : ''), 'coin'));
+        body.push(bPrice(Object.assign({}, m.pm, { rows: m.pm.rows.map(r => r.kind === 'total' ? Object.assign({}, r, { label: many ? 'Total de esta opción' : 'Total del viaje' }) : r) })));
+      }
+      const mr = (m.p_menores || []).filter(r => has(r.edades) || has(r.tarifa));
+      if (mr.length) { body.push(bSection('Tarifa de menores' + (many ? ' · Opción ' + (k + 1) : ''), 'people')); body.push(bDetail(mr.map(r => ({ etiqueta: str(r.edades) || 'Menores', valor: [str(r.tarifa), str(r.nota)].filter(Boolean).join(' · ') || ' ' })))); }
+    });
+    const sel = (many ? hs.filter(m => m.p_en_total === true) : hs).filter(m => m.pm.total > 0), fin = sel.reduce((t0, m) => t0 + m.pm.total, 0);
+    const pmF = { rows: [], total: fin, cur, minorsFree: sel.some(m => m.pm.minorsFree), explain: '' };
+    const tp = sel[0] || hs[0], dTop = Object.assign({}, d, { p_resumen: '' }, tp ? { adultos: tp.adultos, menores: tp.menores, edades: tp.edades } : {});
+    const a = [bTitle({ label: 'Viaje a:', title: upper(d.destino), sub: str(d.pais), box: heroBox(dTop, pmF) })];
+    a.push(...clientAtoms(d), ...body);
+    if (many && sel.length > 1) a.push(bSection('Total del viaje', 'coin'), bPrice({ rows: sel.map(m => ({ kind: 'line', label: str(m.hotel_nombre) || 'Hotel', note: '', amount: money(m.pm.total), cur })).concat([{ kind: 'total', label: 'Total del viaje', amount: money(fin), cur }]), total: fin, cur }));
+    a.push(...listAtoms(d), ...tailAtoms(d, { rows: [], total: 0, cur }));
+    return { title: docHead(d, 'VIAJE'), meta: metaLine(d), pm: pmF, atoms: a, name: str(d.destino) };
   }
 };
 TEMPLATES.vuelo = {
   id: 'vuelo', name: 'Vuelo', icon: 'plane', noun: 'VUELO',
-  desc: 'Cotización o reservación de vuelo: pasajeros, tramos de ida y vuelta, equipaje y tarifa.',
+  desc: 'Una o varias opciones de vuelo (ida o ida y vuelta): pasajeros, fechas, horarios, equipaje, qué incluye y tarifa.',
   build(d) {
     const pm = priceModel(d, { qtyDefault: (d.pasajeros || []).filter(p => has(p.nombre)).length || num(d.adultos) || 1 });
-    const segs = (d.vuelos || []).filter(s => has(s.ciudad_llegada));
-    const dest = str(d.destino) || (segs.length ? str(segs[0].ciudad_llegada) : '');
+    const segs = (d.op_vuelos || []).filter(x => has(x.ciudad_destino));
+    const dest = str(d.destino) || (segs.length ? str(segs[0].ciudad_destino) : '');
     const a = [bTitle({ label: 'Viaje a:', title: upper(dest), sub: str(d.pais), box: heroBox(d, pm) })];
     a.push(...clientAtoms(d));
     const px = bPax(d.pasajeros || []); if (px) { a.push(bSection('Pasajeros', 'people')); a.push(px); }
@@ -1133,31 +1271,19 @@ TEMPLATES.vuelo = {
 };
 TEMPLATES.traslado = {
   id: 'traslado', name: 'Traslado', icon: 'car', noun: 'TRASLADO',
-  desc: 'Traslado sencillo o redondo (aeropuerto–hotel, tours, etc.): ruta, fecha, hora, vehículo y tarifa.',
+  desc: 'Una o varias opciones de traslado (charter, autobús, van…): sencillo o redondo, fechas, horarios, pasajeros y tarifa.',
   build(d) {
-    const pm = priceModel(d, { qtyDefault: 1 });
-    const red = d.tipo === 'Redondo';
-    const title = [upper(d.origen), upper(d.destino)].filter(Boolean).join(' – ');
-    const a = [bTitle({ label: 'Traslado:', title, sub: '', box: heroBox(d, pm) })];
-    a.push(...clientAtoms(d));
-    const pax = paxText(d), veh = str(d.vehiculo);
-    const mk = (fecha, hora) => [{ icon: 'calendar', label: 'Fecha', value: fLong(fecha), wt: .95 }, { icon: 'clock', label: 'Hora', value: str(hora), wt: .6 }, { icon: 'people', label: 'Pasajeros', value: pax, wt: 1.4 }, { icon: 'car', label: 'Vehículo', value: veh, wt: 1.1 }];
-    if (has(d.origen) || has(d.destino)) {
-      a.push(bSection(red ? 'Traslado de ida' : 'Traslado', 'car'));
-      a.push(bTransferLeg({ origen: str(d.origen), destino: str(d.destino), tipo: str(d.tipo), strip: mk(d.fecha_ida, d.hora_ida) }));
-      if (red && (has(d.fecha_regreso) || has(d.hora_regreso))) {
-        a.push(bSection('Traslado de regreso', 'car'));
-        a.push(bTransferLeg({ origen: str(d.destino), destino: str(d.origen), tipo: str(d.tipo), strip: mk(d.fecha_regreso, d.hora_regreso) }));
-      }
-    }
-    if (has(d.vuelo_ref)) a.push(bText('Referencia de vuelo', d.vuelo_ref, 'plane'));
-    a.push(...listAtoms(d), ...tailAtoms(d, pm));
+    const pm = priceModel(d, { qtyDefault: paxN(d) || 1 });
+    const ot = (d.op_traslados || []).filter(o => has(o.origen) || has(o.destino)), title = ot.length ? [upper(ot[0].origen), upper(ot[0].destino)].filter(Boolean).join(' – ') : upper(d.destino);
+    const a = [bTitle({ label: 'Traslado:', title, sub: str(d.pais), box: heroBox(d, pm) })];
+    a.push(...clientAtoms(d)); const px = bPax(d.pasajeros || []); if (px) { a.push(bSection('Pasajeros', 'people')); a.push(px); }
+    a.push(...transferAtoms(d), ...listAtoms(d), ...tailAtoms(d, pm));
     return { title: docHead(d, 'TRASLADO'), meta: metaLine(d), pm, atoms: a, name: title };
   }
 };
 TEMPLATES.circuito = {
   id: 'circuito', name: 'Circuito / tour', icon: 'flag', noun: 'CIRCUITO',
-  desc: 'Circuito, tour o excursión: itinerario por días, salidas, hoteles previstos, incluye/no incluye y tarifa.',
+  desc: 'Circuito, tour o excursión: salidas, hoteles previstos, incluye/no incluye y tarifa.',
   build(d) {
     const pm = priceModel(d, { qtyDefault: paxN(d) || 1 });
     const a = [bTitle({ label: 'Circuito:', title: upper(d.nombre), sub: str(d.destino), box: heroBox(d, pm) })];
@@ -1168,8 +1294,6 @@ TEMPLATES.circuito = {
     const salida = d.fecha_modo === 'mes' ? fMonth(d.fecha_salida) : fLong(d.fecha_salida);
     const info = [{ icon: 'calendar', label: 'Salida', value: str(d.salidas) || salida }, { icon: 'clock', label: 'Duración', value: dur }, { icon: 'people', label: 'Viajeros', value: paxText(d) }, { icon: 'pin', label: 'Punto de salida', value: str(d.punto_salida) }].filter(s => has(s.value));
     if (info.length) { const lay = stripLayout(info, CW); a.push(atom(lay.h, (out, y) => { card(out, LX, y, CW, lay.h); drawStrip(out, LX, y, CW, info, lay, true); }, { gap: 18 })); }
-    const it = (d.itinerario || []).filter(r => has(r.titulo) || has(r.texto));
-    if (it.length) { a.push(bSection('Itinerario', 'flag')); it.forEach((r, i) => a.push(bItinDay(r, i))); a[a.length - 1].gap = 18; }
     const hs = (d.hoteles || []).filter(r => has(r.hotel));
     if (hs.length) {
       a.push(bSection('Hoteles previstos', 'hotel'));
@@ -1180,14 +1304,14 @@ TEMPLATES.circuito = {
   }
 };
 TEMPLATES.paquete = {
-  id: 'paquete', name: 'Paquete: vuelo + hotel', icon: 'suitcase', noun: 'PAQUETE',
-  desc: 'Paquete que combina vuelo(s) y hotel: tramos, hotel, habitaciones, incluye y tarifa total.',
+  id: 'paquete', name: 'Traslado / hotel', icon: 'suitcase', noun: 'PAQUETE',
+  desc: 'Paquete completo en una sola cotización: opciones de vuelo, traslado y hotel, con incluye y tarifa total.',
   build(d) {
     const pm = priceModel(d, { qtyDefault: paxN(d) || 1 });
     const a = [bTitle({ label: 'Viaje a:', title: upper(d.destino), sub: str(d.pais), box: heroBox(d, pm) })];
     a.push(...clientAtoms(d));
     const px = bPax(d.pasajeros || []); if (px) { a.push(bSection('Pasajeros', 'people')); a.push(px); }
-    a.push(...flightAtoms(d), ...hotelAtoms(d), ...listAtoms(d), ...tailAtoms(d, pm));
+    a.push(...flightAtoms(d), ...transferAtoms(d), ...hotelAll(d), ...listAtoms(d), ...tailAtoms(d, pm));
     return { title: docHead(d, 'PAQUETE'), meta: metaLine(d), pm, atoms: a, name: str(d.destino) };
   }
 };
@@ -1206,7 +1330,23 @@ TEMPLATES.otro = {
     return { title: head, meta: metaLine(d), pm, atoms: a, name: str(d.titulo) };
   }
 };
-const TEMPLATE_ORDER = ['hotel', 'vuelo', 'traslado', 'circuito', 'paquete', 'otro'];
+TEMPLATES.itinerario = {
+  id: 'itinerario', name: 'Itinerario', icon: 'flag', noun: 'ITINERARIO',
+  desc: 'Itinerario día por día: fechas, viajeros, actividades de cada día, incluye/no incluye y, si quieres, tarifa.',
+  build(d) {
+    const pm = priceModel(d, { qtyDefault: paxN(d) || 1 });
+    const a = [bTitle({ label: 'Itinerario:', title: upper(d.nombre || d.destino), sub: str(d.pais) || (d.nombre ? str(d.destino) : ''), box: heroBox(d, pm) })];
+    a.push(...clientAtoms(d));
+    if (d.foto) a.push(bPhoto({ name: str(d.nombre || d.destino), sub: str(d.destino) }));
+    const nn = num(d.noches) || nights(d.fecha_salida, d.fecha_regreso), dd = num(d.dias) || (nn ? nn + 1 : 0), dur = dd || nn ? [dd ? plural(dd, 'día', 'días') : '', nn ? plural(nn, 'noche', 'noches') : ''].filter(Boolean).join(' / ') : '';
+    const info = [{ icon: 'calendar', label: 'Salida', value: str(d.salidas) || fLong(d.fecha_salida) }, { icon: 'calendar', label: 'Regreso', value: fLong(d.fecha_regreso) },
+      { icon: 'clock', label: 'Duración', value: dur }, { icon: 'people', label: 'Viajeros', value: paxText(d) }].filter(x => has(x.value));
+    if (info.length) { const lay = stripLayout(info, CW); a.push(atom(lay.h, (out, y) => { card(out, LX, y, CW, lay.h); drawStrip(out, LX, y, CW, info, lay, true); }, { gap: 18 })); }
+    a.push(...listAtoms(d), ...tailAtoms(d, pm));
+    return { title: docHead(d, 'ITINERARIO'), meta: metaLine(d), pm, atoms: a.filter(Boolean), name: str(d.nombre || d.destino) };
+  }
+};
+const TEMPLATE_ORDER = ['hotel', 'vuelo', 'traslado', 'circuito', 'itinerario', 'paquete', 'otro'];
 
 /* ===================================================================== MARCO Y PAGINACIÓN */
 const TAB_X = 48, TAB_W = 372;
@@ -1230,12 +1370,13 @@ function frame(pageNo, total, first, doc) {
     L(bg, 78, 104, PT_W - 78, 104, C.ink, 1);
   }
   GRADBAR(fg, 0, PT_H - 60, PT_W, 60);
-  const PW = 468, PH = 44, PX = (PT_W - PW) / 2, PY = PT_H - 60 - 19;
+  const PW = 468, PH = 60, PX = (PT_W - PW) / 2, PY = PT_H - 60 - 19;
   R(fg, PX, PY, PW, PH, { r: PH / 2, fill: C.dark, stroke: C.white, lw: 2.6 });
   const FS = 7.6, ws = CONTACT.map(c => tw(FN.R, FS, c[1])), iw = [11.5, 11.5, 13.2];
   const tot = ws.reduce((s, w) => s + w, 0) + iw.reduce((s, w) => s + w, 0) + 6 * 3 + 20 * 2;
-  let x = (PT_W - tot) / 2; const cy = PY + PH / 2;
+  let x = (PT_W - tot) / 2; const cy = PY + 21;
   CONTACT.forEach((c, i) => { IC[c[0]](fg, x, cy - 5.75, 11.5); T(fg, x + iw[i] + 6, cy + 2.6, c[1], FN.R, FS, C.white); x += iw[i] + 6 + ws[i] + 20; });
+  { const aw = tw(FN.R, 7.2, ADDRESS), ax = (PT_W - (aw + 14)) / 2; IC.pin(fg, ax, PY + 37, 9.5, C.white); T(fg, ax + 14, PY + 45.2, ADDRESS, FN.R, 7.2, C.white); }
   if (total > 1) T(fg, RX, PY - 8, `${pageNo} / ${total}`, FN.M, 7, C.gray, { a: 'r' });
   return { bg, fg };
 }
@@ -1500,6 +1641,82 @@ const SCHEMA = {
   SEC.viajeros(), SEC.incluye(), SEC.precio(M_ALL, 'persona'), SEC.cond()]
 };
 
+const itinSec = () => ({ id: 'itin', title: 'Itinerario', fields: [rw('itin_dias', 'Días', [t('dia', 'Día (opcional)', { w: 4 }), t('titulo', 'Título', { w: 8 }), a('texto', 'Descripción', { w: 12 }), ph('foto', 'Foto del día (opcional)', { w: 12 })], { add: 'Agregar día', item: 'Día' })] });
+const hotExtra = () => rw('hoteles_extra', 'Más hoteles: cotiza varias opciones en la misma hoja', [
+  t('nombre', 'Hotel', { w: 8 }), s('estrellas', 'Categoría', [['', '—'], ['3', '3 ★'], ['4', '4 ★'], ['5', '5 ★']], { w: 4 }),
+  t('ubicacion', 'Ubicación', { w: 12 }), cb('plan', 'Plan o régimen', ['Todo incluido', 'Desayuno incluido', 'Solo hospedaje', 'Media pensión', 'Pensión completa'], { w: 6 }),
+  t('hab', 'Categoría o vista', { w: 6 }), cb('ocupacion', 'Ocupación', ['Sencilla', 'Doble', 'Triple', 'Cuádruple', 'Quíntuple'], { w: 6 }),
+  d('entrada', 'Entrada', { w: 6 }), d('salida', 'Salida', { w: 6 }), t('precio', 'Precio de esta opción', { w: 12, ph: 'ej. $12,500 MXN por persona' }),
+  ph('foto', 'Fotografía del hotel (opcional)', { w: 12 })], { add: 'Agregar otro hotel', item: 'Hotel opción', start: 2 });
+['paquete'].forEach(id => { const sec = SCHEMA[id].find(x => x.id === 'hotel'); if (sec) sec.fields.push(hotExtra()); });
+const mrows = (k, l, add, item) => rw(k, l, [t('c0', 'Concepto', { w: 3 }), t('c1', 'Valor 1', { w: 3 }), t('c2', 'Valor 2', { w: 3 }), t('c3', 'Valor 3', { w: 3 })], { add, item });
+const matSec = () => ({ id: 'matrices', title: 'Tablas de tarifas y hoteles', fields: [
+  t('tp_titulo', 'Título de la tabla de tarifas', { ph: 'Precios por persona en USD' }), t('tp_cols', 'Encabezados (separados por coma)', { ph: 'Categoría, Hoteles turista, Hoteles primera' }),
+  mrows('tp_filas', 'Filas de tarifas', 'Agregar fila', 'Fila'), t('tp_nota', 'Nota bajo la tabla'),
+  t('th_titulo', 'Título de la tabla de hoteles', { ph: 'Hoteles previstos o similares' }), t('th_cols', 'Encabezados (separados por coma)', { ph: 'Ciudad, Hoteles turista, Hoteles primera' }),
+  mrows('th_filas', 'Filas de hoteles', 'Agregar ciudad', 'Ciudad'), t('th_nota', 'Nota bajo la tabla')] });
+SCHEMA.itinerario = [SEC.doc(), SEC.cliente(), { id: 'viaje', title: 'Viaje', open: true, fields: [t('nombre', 'Nombre del viaje'), t('destino', 'Destino'), t('pais', 'Estado / país'),
+  d('fecha_salida', 'Fecha de salida'), d('fecha_regreso', 'Fecha de regreso'), ph('foto', 'Fotografía (opcional)')] }, SEC.viajeros(),
+  Object.assign(itinSec(), { open: true }), SEC.incluye(), SEC.precio(M_ALL, 'persona'), SEC.cond()];
+['circuito', 'itinerario'].forEach(id => { const i = SCHEMA[id].findIndex(x => x.id === 'incluye'); if (i >= 0) SCHEMA[id].splice(i, 0, matSec()); });
+Object.keys(SCHEMA).forEach(id => { const i = SCHEMA[id].findIndex(x => x.id === 'cond'); if (i >= 0) SCHEMA[id].splice(i + 1, 0, { id: 'cond2', title: 'Condiciones y notas importantes', fields: [a('condiciones', 'Condiciones'), a('notas', 'Notas importantes')] }); });
+SCHEMA.circuito = SCHEMA.circuito.filter(x => x.id !== 'itin');
+{ const vs = SCHEMA.itinerario.find(x => x.id === 'viaje'); vs.fields.splice(3, 0, n('dias', 'Días'), n('noches', 'Noches'), t('salidas', 'Salidas (texto libre, reemplaza la fecha de salida)', { ph: 'ej. Diarias' })); }
+const FL_COLS = () => [
+  s('tipo', 'Tipo de vuelo', [['Ida y vuelta', 'Ida y vuelta'], ['Solo ida', 'Solo ida']], { w: 6, def: 'Ida y vuelta' }), t('aerolinea', 'Aerolínea', { w: 6 }), t('titulo', 'Nombre de la opción (opcional)', { w: 12, ph: 'ej. Directo, con escala…' }),
+  t('vuelo_ida', 'Nº de vuelo (ida)', { w: 4 }), d('fecha_ida', 'Fecha de ida', { w: 4 }), h('hora_sal_ida', 'Salida', { w: 2 }), h('hora_lleg_ida', 'Llegada', { w: 2 }), d('fecha_lleg_ida', 'Llega otro día (opcional)', { w: 12 }),
+  t('cod_origen', 'Código origen', { w: 3, ph: 'GDL' }), t('ciudad_origen', 'Ciudad de origen', { w: 9 }), t('aer_origen', 'Aeropuerto de origen', { w: 12 }),
+  t('cod_destino', 'Código destino', { w: 3, ph: 'CUN' }), t('ciudad_destino', 'Ciudad de destino', { w: 9 }), t('aer_destino', 'Aeropuerto de destino', { w: 12 }),
+  t('duracion_ida', 'Duración total del vuelo (ida)', { w: 6, ph: 'ej. 2 h 18 m' }), t('escalas_ida', 'Escalas · resumen', { w: 6, ph: 'ej. Directo' }),
+  rw('esc_ida', 'Escalas de la ida (dónde se hacen y cuánto dura cada una)', [t('lugar', 'Dónde se hace la escala', { w: 8, ph: 'ej. Ciudad de México (MEX)' }), t('espera', 'Cuánto dura', { w: 4, ph: 'auto' }), h('hora_lleg', 'Llega a la escala', { w: 3 }), h('hora_sal', 'Sale de la escala', { w: 3 }), t('vuelo', 'Vuelo del siguiente tramo', { w: 6, ph: 'ej. AM 641' }), t('nota', 'Nota (ej. cambio de terminal)', { w: 12 })], { add: 'Agregar escala', item: 'Escala' }),
+  t('vuelo_vta', 'Nº de vuelo (vuelta)', { w: 4, showIf: x => x.tipo !== 'Solo ida' }), d('fecha_vta', 'Fecha de vuelta', { w: 4, showIf: x => x.tipo !== 'Solo ida' }),
+  h('hora_sal_vta', 'Salida', { w: 2, showIf: x => x.tipo !== 'Solo ida' }), h('hora_lleg_vta', 'Llegada', { w: 2, showIf: x => x.tipo !== 'Solo ida' }), d('fecha_lleg_vta', 'Llega otro día (opcional)', { w: 12, showIf: x => x.tipo !== 'Solo ida' }),
+  t('duracion_vta', 'Duración total del vuelo (vuelta)', { w: 6, ph: 'ej. 2 h 35 m', showIf: x => x.tipo !== 'Solo ida' }), t('escalas_vta', 'Escalas · resumen', { w: 6, ph: 'ej. Directo', showIf: x => x.tipo !== 'Solo ida' }),
+  rw('esc_vta', 'Escalas de la vuelta (dónde se hacen y cuánto dura cada una)', [t('lugar', 'Dónde se hace la escala', { w: 8, ph: 'ej. Ciudad de México (MEX)' }), t('espera', 'Cuánto dura', { w: 4, ph: 'auto' }), h('hora_lleg', 'Llega a la escala', { w: 3 }), h('hora_sal', 'Sale de la escala', { w: 3 }), t('vuelo', 'Vuelo del siguiente tramo', { w: 6, ph: 'ej. AM 641' }), t('nota', 'Nota (ej. cambio de terminal)', { w: 12 })], { add: 'Agregar escala', item: 'Escala', showIf: x => x.tipo !== 'Solo ida' }),
+  cb('clase', 'Clase', ['Económica', 'Premium economy', 'Business', 'Primera clase'], { w: 4 }), t('checkin', 'Código web check-in', { w: 4 }), t('pnr', 'Código de reservación', { w: 4 }),
+  s('eq_mochila', 'Mochila o cartera', BAG, { w: 4 }), s('eq_mano', 'Equipaje de mano', BAG, { w: 4 }), s('eq_doc', 'Equipaje a documentar', BAG, { w: 4 }),
+  a('incluye', 'Qué incluye este vuelo', { w: 12, ph: 'ej. Maleta documentada de 23 kg, selección de asiento' }), t('precio', 'Precio de esta opción', { w: 6 }), t('nota', 'Nota', { w: 6 })];
+const TR_COLS = () => [
+  s('tipo', 'Tipo', [['Sencillo', 'Sencillo (solo ida)'], ['Redondo', 'Redondo (ida y regreso)']], { w: 6, def: 'Sencillo' }), cb('transporte', 'Medio de transporte', ['Charter', 'Autobús', 'Van', 'Camioneta', 'Auto privado', 'Lancha', 'Tren'], { w: 6 }),
+  t('empresa', 'Empresa u operador', { w: 6 }), t('titulo', 'Nombre de la opción (opcional)', { w: 6 }), t('origen', 'Origen', { w: 6 }), t('destino', 'Destino', { w: 6 }), t('punto', 'Punto de abordaje o encuentro', { w: 12 }),
+  d('fecha_ida', 'Fecha de ida', { w: 4 }), h('hora_ida', 'Hora de salida', { w: 4 }), h('hora_lleg_ida', 'Hora de llegada', { w: 4 }),
+  d('fecha_vta', 'Fecha de regreso', { w: 4, showIf: x => x.tipo === 'Redondo' }), h('hora_vta', 'Hora de salida', { w: 4, showIf: x => x.tipo === 'Redondo' }), h('hora_lleg_vta', 'Hora de llegada', { w: 4, showIf: x => x.tipo === 'Redondo' }),
+  t('duracion', 'Duración', { w: 4 }), t('vehiculo', 'Unidad o capacidad', { w: 5, ph: 'ej. Van Sprinter' }), n('pasajeros', 'Pasajeros', { w: 3 }),
+  a('incluye', 'Qué incluye', { w: 12 }), t('precio', 'Precio de esta opción', { w: 6 }), t('nota', 'Nota', { w: 6 })];
+const flightSec = () => ({ id: 'vuelos', title: 'Opciones de vuelo', open: true, fields: [rw('op_vuelos', 'Opciones de vuelo', FL_COLS(), { add: 'Agregar opción de vuelo', item: 'Opción' })] });
+const transSec = () => ({ id: 'traslados', title: 'Opciones de traslado', open: true, fields: [rw('op_traslados', 'Opciones de traslado', TR_COLS(), { add: 'Agregar opción de traslado', item: 'Opción' })] });
+SCHEMA.vuelo = SCHEMA.vuelo.map(x => x.id === 'vuelos' ? flightSec() : x);
+SCHEMA.paquete = SCHEMA.paquete.flatMap(x => x.id === 'vuelos' ? [flightSec(), transSec()] : [x]);
+SCHEMA.traslado = [SEC.doc(), SEC.cliente(), { id: 'destino', title: 'Destino', fields: [t('destino', 'Destino general (opcional)'), t('pais', 'Estado / país')] }, SEC.viajeros(), SEC.pasajeros(), transSec(), SEC.incluye(), SEC.precio(M_ALL, 'paquete'), SEC.cond()];
+['paquete'].forEach(id => { const i = SCHEMA[id].findIndex(x => x.id === 'precio'); SCHEMA[id].splice(i + 1, 0, { id: 'menores', title: 'Tarifa de menores', fields: [rw('p_menores', 'Tarifa de menores por edad', [t('edades', 'Edades', { w: 4, ph: 'ej. 0 a 5 años' }), cb('tarifa', 'Tarifa', ['Gratis', 'Misma tarifa que un adulto', '50% de la tarifa de adulto'], { w: 8 }), t('nota', 'Nota', { w: 12 })], { add: 'Agregar rango de edad', item: 'Rango' })] }); });
+const VISTAS = ['Vista al jardín', 'Vista a la alberca', 'Vista parcial al mar', 'Vista al mar', 'Vista a la montaña'];
+const HOT_COLS = () => {
+  const per = x => x.p_modo === 'persona', pp = x => x.p_modo === 'persona' || x.p_modo === 'paquete';
+  return [
+    t('nombre', 'Nombre del hotel', { w: 8 }), s('estrellas', 'Categoría', [['', 'Sin mostrar'], ['3', '3 estrellas'], ['4', '4 estrellas'], ['5', '5 estrellas']], { w: 4 }),
+    t('ubicacion', 'Ubicación del hotel', { w: 12, ph: 'ej. Ixtapa – Zihuatanejo, México' }), cb('plan', 'Plan o régimen', ['Todo incluido', 'Desayuno incluido', 'Solo hospedaje', 'Media pensión', 'Pensión completa'], { w: 6 }),
+    s('fecha_modo', 'Cómo mostrar las fechas', [['exacta', 'Fechas exactas'], ['mes', 'Solo mes y año']], { w: 6, def: 'exacta' }),
+    d('entrada', 'Entrada', { w: 6 }), d('salida', 'Salida', { w: 6, showIf: x => x.fecha_modo !== 'mes' }), n('noches', 'Noches', { w: 6, showIf: x => x.fecha_modo === 'mes' }),
+    ph('foto', 'Fotografía del hotel (opcional)', { w: 12 }),
+    rw('habitaciones', 'Habitaciones y viajeros (Doble = 2 adultos, Triple = 3… los menores se anotan aparte)', [s('tipo', 'Vista de la habitación', [['', 'Sin especificar']].concat(VISTAS.map(v => [v, v])), { w: 6 }), cb('ocupacion', 'Ocupación', ['Sencilla', 'Doble', 'Triple', 'Cuádruple', 'Quíntuple'], { w: 6 }),
+      n('adultos', 'Adultos', { w: 3, ph: 'auto' }), n('menores', 'Menores', { w: 3 }), t('edades', 'Edades de los menores', { w: 6, ph: 'ej. 9 y 10 años' }), t('observaciones', 'Observaciones (ej. jacuzzi, junior suite)', { w: 8 }), n('precio', 'Precio', { w: 4 })], { add: 'Agregar habitación', item: 'Habitación' }),
+    s('p_modo', 'Precio · cómo se calcula', M_HOTEL, { w: 12, def: 'persona' }),
+    t('p_unidad', 'Tarifa por…', { w: 6, ph: 'persona', showIf: per }), n('p_tarifa', 'Tarifa', { w: 6, showIf: pp }),
+    c('p_desde', 'Mostrar «Desde»', { w: 12, showIf: pp }), c('p_por_noche', 'La tarifa es por noche (se multiplica por las noches)', { w: 12, showIf: per }),
+    n('p_cantidad', 'Cantidad (vacío = adultos indicados)', { w: 12, showIf: per }),
+    s('p_menor_modo', '¿Cuánto pagan los menores?', [['igual', 'Pagan la misma tarifa que un adulto'], ['gratis', 'Sin costo (gratis)'], ['precio', 'Tarifa distinta por menor'], ['no', 'No incluir en el cálculo']], { w: 12, def: 'igual', showIf: per }),
+    n('p_tarifa_menor', 'Tarifa por menor', { w: 6, showIf: x => per(x) && x.p_menor_modo === 'precio' }), t('p_menor_nota', 'Nota sobre menores', { w: 6, showIf: per }),
+    t('p_nota', 'Nota de la tarifa', { w: 12, ph: 'ej. en habitación doble', showIf: pp }),
+    rw('p_lineas', 'Conceptos', [t('concepto', 'Concepto', { w: 6 }), n('monto', 'Monto', { w: 3 }), t('detalle', 'Detalle', { w: 12 })], { add: 'Agregar concepto', item: 'Concepto', showIf: x => x.p_modo === 'lineas' }),
+    rw('p_extras', 'Extras o servicios adicionales', [t('desc', 'Descripción', { w: 12 }), n('cant', 'Cantidad', { w: 4 }), n('precio', 'Precio unitario', { w: 4 })], { add: 'Agregar extra', item: 'Extra' }),
+    c('p_manual', 'Usar total manual', { w: 12, showIf: x => x.p_modo !== 'total' }), n('p_total', 'Total', { w: 6, showIf: x => x.p_modo === 'total' || x.p_manual }),
+    rw('p_menores', 'Tarifa de menores por edad (informativa)', [t('edades', 'Edades', { w: 4, ph: 'ej. 0 a 5 años' }), cb('tarifa', 'Tarifa', ['Gratis', 'Misma tarifa que un adulto', '50% de la tarifa de adulto'], { w: 8 }), t('nota', 'Nota', { w: 12 })], { add: 'Agregar rango de edad', item: 'Rango' }),
+    c('p_en_total', 'Sumar este hotel al «Total del viaje» (déjalo sin marcar si estás comparando hoteles)', { w: 12 })];
+};
+SCHEMA.hotel = [SEC.doc(), SEC.cliente(), SEC.destino(), { id: 'hoteles', title: 'Hoteles: hotel, habitaciones y precio', open: true, fields: [
+  s('moneda', 'Moneda', [['MXN', 'MXN · pesos'], ['USD', 'USD · dólares'], ['EUR', 'EUR · euros']], { def: 'MXN' }),
+  rw('hoteles', 'Opciones de hotel', HOT_COLS(), { add: 'Agregar otro hotel', item: 'Hotel opción' })] }, SEC.incluye(), SEC.cond()];
+Object.keys(SCHEMA).forEach(id => { const i = SCHEMA[id].findIndex(x => x.id === 'cond'); if (i >= 0 && !SCHEMA[id].some(x => x.id === 'cond2')) SCHEMA[id].splice(i + 1, 0, { id: 'cond2', title: 'Condiciones y notas importantes', fields: [a('condiciones', 'Condiciones'), a('notas', 'Notas importantes')] }); });
 function defFor(f) {
   if (f.def !== undefined) return f.def;
   if (f.type === 'check') return false; if (f.type === 'list' || f.type === 'rows') return []; if (f.type === 'photo') return ''; return '';
@@ -1518,14 +1735,46 @@ function coerce(f, v) {
     default: return S(v);
   }
 }
+const P_KEYS = ['p_modo', 'p_unidad', 'p_tarifa', 'p_desde', 'p_por_noche', 'p_cantidad', 'p_menor_modo', 'p_tarifa_menor', 'p_menor_nota', 'p_nota', 'p_lineas', 'p_extras', 'p_manual', 'p_total', 'p_menores'];
+const LEG = ['hotel_nombre', 'estrellas', 'hotel_ubicacion', 'plan', 'fecha_modo', 'entrada', 'salida', 'noches', 'foto', 'habitaciones', 'hoteles_extra'].concat(P_KEYS);
+function vistaOf(t) {
+  const x = String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (/vista\s+parcial/.test(x)) return VISTAS[2]; if (/vista.*jardin/.test(x)) return VISTAS[0]; if (/vista.*(alberca|piscina)/.test(x)) return VISTAS[1];
+  if (/vista.*(mar|oceano)/.test(x)) return VISTAS[3]; if (/vista.*montana/.test(x)) return VISTAS[4]; return '';
+}
+function normHoteles(raw) { // la «vista» solo admite las 5 opciones; lo demás (jacuzzi, suite…) pasa a observaciones
+  let ch = false;
+  const hs = raw.hoteles.map(h => { if (!h || !Array.isArray(h.habitaciones)) return h;
+    const hb = h.habitaciones.map(r => { if (!r || !r.tipo) return r; const v = vistaOf(r.tipo); if (v === r.tipo) return r; ch = true;
+      const rest = String(r.tipo).split(/\s*[,·;]\s*/).filter(x => x && !vistaOf(x)).join(', '), o2 = Object.assign({}, r, { tipo: v });
+      if (rest) o2.observaciones = [rest.charAt(0).toUpperCase() + rest.slice(1), r.observaciones].filter(Boolean).join(' · '); return o2; });
+    return Object.assign({}, h, { habitaciones: hb }); });
+  return ch ? Object.assign({}, raw, { hoteles: hs }) : raw;
+}
+function migrate(id, raw) { // formato anterior de Hotel / playa (un hotel + habitaciones + precio sueltos) → lista de hoteles
+  if (id !== 'hotel' || !raw) return raw;
+  if (Array.isArray(raw.hoteles) && raw.hoteles.length) return normHoteles(raw);
+  const filled = k => raw[k] !== undefined && raw[k] !== '' && raw[k] !== null && !(Array.isArray(raw[k]) && !raw[k].length);
+  if (!LEG.some(filled)) return raw;
+  const first = { nombre: raw.hotel_nombre, estrellas: raw.estrellas, ubicacion: raw.hotel_ubicacion, plan: raw.plan, fecha_modo: raw.fecha_modo || 'exacta', entrada: raw.entrada, salida: raw.salida, noches: raw.noches, foto: raw.foto, habitaciones: raw.habitaciones || [], p_en_total: false };
+  P_KEYS.forEach(k => { if (raw[k] !== undefined) first[k] = raw[k]; });
+  const hb = first.habitaciones = (first.habitaciones || []).map(r => Object.assign({}, r));
+  if (parseFloat(raw.adultos) || parseFloat(raw.menores)) { if (!hb.length) hb.push({ adultos: raw.adultos, menores: raw.menores, edades: raw.edades }); else if (hb.length === 1) ['adultos', 'menores', 'edades'].forEach(k => { if (!hb[0][k] && raw[k]) hb[0][k] = raw[k]; }); }
+  const extra = (raw.hoteles_extra || []).map(r => { const dg = String(r.precio || '').replace(/[^\d.]/g, ''); return { nombre: r.nombre, estrellas: r.estrellas, ubicacion: r.ubicacion, plan: r.plan, fecha_modo: 'exacta', entrada: r.entrada, salida: r.salida, foto: r.foto, habitaciones: (r.hab || r.ocupacion) ? [{ tipo: r.hab, ocupacion: r.ocupacion }] : [], p_modo: dg ? 'paquete' : 'total', p_tarifa: dg, p_nota: r.precio || '', p_en_total: false }; });
+  const o = Object.assign({}, raw, { hoteles: [first].concat(extra) }); LEG.forEach(k => { delete o[k]; }); o.hoteles = sanRows(SCHEMA.hotel.find(x => x.id === 'hoteles').fields.find(x => x.k === 'hoteles'), o.hoteles); return normHoteles(o);
+}
+function sanRows(f, v) {
+  return (Array.isArray(v) ? v : []).filter(r => r && typeof r === 'object').map(r => { const o = {};
+    f.cols.forEach(cf => { o[cf.k] = ('k' in cf && cf.k in r) ? (cf.type === 'rows' ? sanRows(cf, r[cf.k]) : coerce(cf, r[cf.k])) : defFor(cf); }); return o; });
+}
 function sanitize(id, raw) {
-  const out = blank(id); raw = raw && typeof raw === 'object' ? raw : {};
+  const out = blank(id); raw = migrate(id, raw && typeof raw === 'object' ? raw : {});
   flat(id).forEach(f => {
     if (!(f.k in raw) || raw[f.k] === null) return;
     const v = raw[f.k];
     if (f.type === 'photo') return;
     if (f.type === 'list') { out[f.k] = (Array.isArray(v) ? v : S(v).split(/\n|;/)).map(S).filter(Boolean); return; }
-    if (f.type === 'rows') { out[f.k] = (Array.isArray(v) ? v : []).filter(r => r && typeof r === 'object').map(r => { const o = {}; f.cols.forEach(cf => { o[cf.k] = ('k' in cf && cf.k in r) ? coerce(cf, r[cf.k]) : defFor(cf); }); return o; }); return; }
+    if (f.type === 'rows') { out[f.k] = sanRows(f, v); return; }
     out[f.k] = coerce(f, v);
   });
   return out;
@@ -1542,10 +1791,23 @@ function describe(id, T) {
   });
   return lines.join('\n');
 }
-const API = { SCHEMA, blank, flat, sanitize, describe, defFor, AV };
+const API = { SCHEMA, blank, flat, sanitize, describe, defFor, migrate, vistaOf, VISTAS, AV };
 if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.VV_SCHEMA = API;
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
+<script>window.VV_EXAMPLES.itinerario = { tipo_doc: 'cotizacion', numero: 'COT-2026-004', cliente_mostrar: true, cliente_nombre: 'Cliente de ejemplo (DEMO)', nombre: 'Escapada a Pátzcuaro',
+  destino: 'Pátzcuaro', pais: 'Michoacán, México', fecha_salida: '2026-11-01', fecha_regreso: '2026-11-03', adultos: '2', menores: '0',
+  itin_dias: [{ dia: '1', titulo: 'Llegada y centro histórico', texto: 'Recepción, check-in y recorrido a pie por la Plaza Vasco de Quiroga.' },
+    { dia: '2', titulo: 'Isla de Janitzio', texto: 'Paseo en lancha, subida al mirador y comida típica de pescado blanco.' }, { dia: '3', titulo: 'Regreso', texto: 'Desayuno, tiempo libre para compras y salida.' }],
+  incluye: ['Hospedaje 2 noches', 'Paseo en lancha'], no_incluye: ['Alimentos no especificados'], moneda: 'MXN', p_modo: 'total', p_total: '8500', frase: true };
+VV_EXAMPLES.vuelo.op_vuelos = [{ tipo: 'Ida y vuelta', aerolinea: 'Volaris', vuelo_ida: 'Y4 512', fecha_ida: '2027-03-25', hora_sal_ida: '07:45', hora_lleg_ida: '10:05', cod_origen: 'GDL', ciudad_origen: 'Guadalajara', aer_origen: 'Aeropuerto Internacional Miguel Hidalgo', cod_destino: 'CUN', ciudad_destino: 'Cancún', aer_destino: 'Aeropuerto Internacional de Cancún', escalas_ida: 'Directo', vuelo_vta: 'Y4 513', fecha_vta: '2027-03-28', hora_sal_vta: '11:00', hora_lleg_vta: '13:20', escalas_vta: 'Directo', clase: 'Económica', eq_mochila: 'si', eq_mano: 'no', eq_doc: 'no', incluye: 'Artículo personal. Equipaje de mano y documentado con costo adicional.', precio: '$5,800 MXN por persona' },
+  { tipo: 'Solo ida', aerolinea: 'Aeroméxico', vuelo_ida: 'AM 641', fecha_ida: '2027-03-25', hora_sal_ida: '09:10', hora_lleg_ida: '12:30', cod_origen: 'GDL', ciudad_origen: 'Guadalajara', cod_destino: 'CUN', ciudad_destino: 'Cancún', escalas_ida: '1 escala en CDMX', clase: 'Económica', eq_mano: 'si', eq_doc: 'si', precio: '$3,900 MXN por persona' }];
+VV_EXAMPLES.traslado.op_traslados = [{ tipo: 'Redondo', transporte: 'Van', empresa: 'Traslados Demo', origen: 'Aeropuerto de Cancún', destino: 'Hotel Riu Cancún', fecha_ida: '2027-03-25', hora_ida: '10:30', fecha_vta: '2027-03-28', hora_vta: '09:00', vehiculo: 'Van Sprinter', pasajeros: '2', incluye: 'Asistencia en aeropuerto', precio: '$1,200 MXN' },
+  { tipo: 'Sencillo', transporte: 'Charter', origen: 'Aeropuerto de Cancún', destino: 'Hotel Riu Cancún', fecha_ida: '2027-03-25', hora_ida: '10:30', pasajeros: '2', precio: '$2,400 MXN' }];
+VV_EXAMPLES.paquete.op_vuelos = VV_EXAMPLES.vuelo.op_vuelos.slice(0, 1); VV_EXAMPLES.paquete.op_traslados = VV_EXAMPLES.traslado.op_traslados.slice(0, 1);
+VV_EXAMPLES.hotel.p_menores = [{ edades: '0 a 5 años', tarifa: 'Gratis', nota: 'compartiendo habitación' }, { edades: '6 a 12 años', tarifa: '$1,800 MXN', nota: 'por noche' }];
+VV_EXAMPLES.vuelo.op_vuelos[0].duracion_ida = '2 h 18 m'; VV_EXAMPLES.vuelo.op_vuelos[0].duracion_vta = '2 h 35 m';
+VV_EXAMPLES.vuelo.op_vuelos[1].duracion_ida = '5 h 30 m'; VV_EXAMPLES.vuelo.op_vuelos[1].hora_lleg_ida = '15:40'; VV_EXAMPLES.vuelo.op_vuelos[1].vuelo_ida = 'AM 641'; VV_EXAMPLES.vuelo.op_vuelos[1].esc_ida = [{ lugar: 'Ciudad de México (MEX)', hora_lleg: '11:05', hora_sal: '12:25', vuelo: 'AM 642', nota: 'Cambio de terminal' }]; delete VV_EXAMPLES.vuelo.op_vuelos[1].escalas_ida;</script>
 <script>/* Interfaz del cotizador (usa VV, VV_SCHEMA, VV_EXAMPLES y los datos incrustados VV_ASSETS). */
 (function () {
 'use strict';
@@ -1574,13 +1836,13 @@ function loadSaved() {
     const raw = localStorage.getItem(KEY); if (!raw) return false;
     const s = JSON.parse(raw); if (!s || !SC.SCHEMA[s.tpl]) return false;
     state.tpl = s.tpl; state.ex = s.ex && typeof s.ex === 'object' ? s.ex : {};
-    Object.keys(s.data || {}).forEach(id => { if (SC.SCHEMA[id]) state.data[id] = Object.assign(SC.blank(id), s.data[id]); });
+    Object.keys(s.data || {}).forEach(id => { if (SC.SCHEMA[id]) state.data[id] = Object.assign(SC.blank(id), SC.migrate(id, s.data[id])); });
     return true;
   } catch (e) { return false; }
 }
 let saveT = null;
 function scheduleSave() { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify({ tpl: state.tpl, data: state.data, ex: state.ex })); } catch (e) { /* sin almacenamiento */ } }, 500); }
-function loadExample(id) { state.data[id] = Object.assign(SC.blank(id), JSON.parse(JSON.stringify(EX[id]))); state.ex[id] = true; }
+function loadExample(id) { state.data[id] = Object.assign(SC.blank(id), SC.migrate(id, JSON.parse(JSON.stringify(EX[id])))); state.ex[id] = true; }
 function syncBanner() { $('#exbanner').hidden = !state.ex[state.tpl]; }
 
 /* ---------------------------------------------------------------- capacidades del visor */
@@ -1599,7 +1861,7 @@ function notify(msg, kind) {
 
 /* ---------------------------------------------------------------- vista previa */
 let prevT = null, lastDoc = null;
-function images() { return { logo: AS.logo, photo: dataFor(state.tpl).foto || null }; }
+function images() { const d = dataFor(state.tpl), o = { logo: AS.logo, photo: d.foto || null }; (d.hoteles_extra || []).forEach((r, i) => { o['hx' + i] = r.foto || null; }); (d.itin_dias || []).forEach((r, i) => { o['dy' + i] = r.foto || null; }); (d.hoteles || []).forEach((r, i) => { o['hh' + i] = r.foto || null; }); return o; }
 function build() { return VV.buildDoc(state.tpl, dataFor(state.tpl)); }
 function renderPreview() {
   const box = $('#sheets');
@@ -1662,15 +1924,23 @@ function listEditor(f, obj) {
   };
   draw(); return wrap;
 }
+function cellEl(cf, row) {
+  const c = ctl(cf, row);
+  if (cf.type === 'check') return h('div', { class: 'field' }, c);
+  if (cf.type === 'rows' || cf.type === 'photo') return h('div', { class: 'field wide' }, h('div', { class: 'flabel', text: cf.l }), c);
+  return labelled(cf.l, c);
+}
 function rowsEditor(f, obj) {
+  if (!Array.isArray(obj[f.k])) obj[f.k] = [];
   const wrap = h('div', { class: 'rows' });
   const draw = () => {
     wrap.textContent = '';
     obj[f.k].forEach((row, i) => {
       const grid = h('div', { class: 'grid12' });
-      f.cols.forEach(cf => { const el = labelled(cf.l, ctl(cf, row)); el.style.gridColumn = 'span ' + (cf.w || 12); grid.append(el); });
-      wrap.append(h('div', { class: 'rowcard' }, h('div', { class: 'rowhead' }, h('span', { text: `${f.item || 'Elemento'} ${i + 1}` }),
-        h('button', { type: 'button', class: 'icon', title: 'Quitar', 'aria-label': 'Quitar ' + (f.item || 'elemento') + ' ' + (i + 1), text: '×', onclick: () => { obj[f.k].splice(i, 1); draw(); changed(); } })), grid));
+      const cells = []; f.cols.forEach(cf => { const el = cellEl(cf, row); el.style.gridColumn = 'span ' + (cf.w || 12); if (cf.showIf) cells.push([cf, el]); grid.append(el); });
+      const upd = () => cells.forEach(([cf, el]) => { el.style.display = cf.showIf(row) ? '' : 'none'; }); grid.addEventListener('input', upd); grid.addEventListener('change', upd); upd();
+      wrap.append(h('div', { class: 'rowcard' }, h('div', { class: 'rowhead' }, h('span', { text: `${f.item || 'Elemento'} ${i + (f.start || 1)}` }),
+        h('button', { type: 'button', class: 'icon', title: 'Quitar', 'aria-label': 'Quitar ' + (f.item || 'elemento') + ' ' + (i + (f.start || 1)), text: '×', onclick: () => { obj[f.k].splice(i, 1); draw(); changed(); } })), grid));
     });
     wrap.append(h('button', { type: 'button', class: 'btn ghost small', text: '+ ' + (f.add || 'Agregar'), onclick: () => { const r = {}; f.cols.forEach(cf => { r[cf.k] = SC.defFor(cf); }); obj[f.k].push(r); draw(); changed(); } }));
   };
@@ -1743,6 +2013,7 @@ async function downloadPDF() {
   const btn = $('#dl'), btn2 = $('#dl2'); btn.disabled = true; btn2.disabled = true;
   try {
     const doc = build(), pdf = VV.renderPDF(doc.pages, images());
+    try { const dd = JSON.parse(JSON.stringify(dataFor(state.tpl))); delete dd.foto; Object.keys(dd).forEach(k => { if (Array.isArray(dd[k])) dd[k].forEach(r => { if (r && typeof r === 'object') delete r.foto; }); }); pdf.setProperties({ subject: 'VVDATA:' + btoa(unescape(encodeURIComponent(JSON.stringify({ tpl: state.tpl, data: dd })))) }); } catch (e) { /* sin metadatos */ }
     const d = dataFor(state.tpl), kind = d.tipo_doc === 'reservacion' ? 'Reservacion' : 'Cotizacion';
     const name = `${kind}_${slug(doc.meta.name) || VV.TEMPLATES[state.tpl].name}_${new Date().toISOString().slice(0, 10)}.pdf`;
     const dl = await cap('downloads'), buf = pdf.output('arraybuffer');
@@ -1766,29 +2037,6 @@ function newBlank() {
 /* ---------------------------------------------------------------- lectura de documentos con Claude */
 const imp = { files: [], ctl: null };
 function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('No cargó ' + src)); document.head.append(s); }); }
-async function fileToInput(file) {
-  const name = file.name.toLowerCase();
-  if (file.type.startsWith('image/')) return { images: [file] };
-  if (name.endsWith('.docx')) { await loadScript(CDN.mammoth); const r = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() }); return { text: r.value }; }
-  if (name.endsWith('.pdf')) return pdfInput(file);
-  if (/\.(txt|md|csv|tsv|json|eml|html?)$/.test(name) || file.type.startsWith('text/')) { let t = await file.text(); if (/\.html?$/.test(name)) t = t.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '); return { text: t }; }
-  throw new Error('Formato no compatible: ' + file.name + '. Usa PDF, Word (.docx), imagen o texto.');
-}
-async function pdfInput(file) {
-  await loadScript(CDN.pdf); const lib = window.pdfjsLib; lib.GlobalWorkerOptions.workerSrc = CDN.pdfw;
-  const pdf = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise; let text = '';
-  for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) { const pg = await pdf.getPage(i); const c = await pg.getTextContent(); text += c.items.map(x => x.str).join(' ') + '\n'; }
-  if (text.replace(/\s/g, '').length > 40) return { text };
-  const sample = await cap('sample'); const lim = sample ? await sample.limits().catch(() => null) : null;
-  if (!lim || !lim.images) throw new Error('Este PDF es una imagen escaneada y aquí no se pueden leer imágenes. Pega el texto.');
-  const imgs = [];
-  for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
-    const pg = await pdf.getPage(i), vp = pg.getViewport({ scale: 1.5 }), cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
-    await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
-    imgs.push(await new Promise(r => cv.toBlob(r, 'image/jpeg', .85)));
-  }
-  return { images: imgs };
-}
 const MES_N = { enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6, julio: 7, agosto: 8, septiembre: 9, setiembre: 9, octubre: 10, noviembre: 11, diciembre: 12 };
 function isoD(d, m, y) { return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; }
 function parseMessage(text) {
@@ -1819,50 +2067,448 @@ function parseMessage(text) {
   if (o.habitaciones && o.habitaciones.length === 1) { if (o.adultos) o.habitaciones[0].adultos = o.adultos; if (o.menores) { o.habitaciones[0].menores = o.menores; if (o.edades) o.habitaciones[0].edades = o.edades; } }
   return found >= 2 ? o : null;
 }
-function runLocalImport() {
-  const text = $('#imptext').value.trim();
-  if (!text) { notify('Pega primero los datos.', 'err'); return; }
-  const r = parseMessage(text);
-  if (!r) { $('#impmsg').textContent = 'No reconocí el formato. Escribe los datos en el formulario o usa la versión dentro de Claude para leer cualquier documento.'; $('#impmsg').className = 'impmsg bad'; return; }
-  state.data.hotel = SC.sanitize('hotel', r); state.tpl = 'hotel'; state.ex.hotel = false; syncBanner();
-  renderTemplates(); renderForm(); renderPreview(); scheduleSave();
-  $('#impmsg').textContent = 'Listo: plantilla «Hotel / playa». Revisa los datos antes de descargar.'; $('#impmsg').className = 'impmsg ok';
-}
-function importPrompt(text, detect) {
-  const ids = VV.TEMPLATE_ORDER, cur = state.tpl;
-  return [
-    'Eres el asistente de captura de una agencia de viajes mexicana. Del material que sigue (texto y/o imágenes) extrae los datos de una cotización o reservación de viaje para llenar un formulario.',
-    detect ? 'Elige la plantilla que mejor corresponda al material.' : `Usa la plantilla "${cur}".`,
-    'Plantillas y campos disponibles:', ids.map(id => SC.describe(id, VV.TEMPLATES[id])).join('\n\n'),
-    'REGLAS: 1) Devuelve SOLO un JSON: {"plantilla": "<id>", "datos": {...}, "notas": "<dudas o datos que faltan, en una frase>"}. 2) En "datos" usa únicamente las claves de la plantilla elegida. 3) Si un dato no aparece en el material, OMITE la clave; no inventes precios, fechas, nombres ni folios. 4) Fechas como AAAA-MM-DD (si falta el año, usa el próximo año razonable), horas HH:MM, números sin símbolo de moneda ni comas. 5) Textos en español, como aparecen en el material. 6) Para campos "uno de", usa exactamente uno de los valores permitidos. 7) Si hay precio por persona y total, usa p_modo "persona" con p_tarifa y deja p_total vacío. Si solo hay un total, usa p_modo "total" con p_total. Si el precio dice «desde», pon p_desde en true. 8) Frases de advertencia como «sujeto a cambios y disponibilidad» van en "aviso". 9) Lo incluido y no incluido va en "incluye" y "no_incluye" como listas. 10) En hoteles: hotel_ubicacion es el lugar del hotel (si solo se da el destino, usa "destino, país"); si dice p. ej. "1 habitación doble — vista al mar" crea una fila en habitaciones con ocupacion "Doble", tipo "Vista al mar" y los adultos y menores que se alojan en ella. 11) Si la tarifa es "por persona por noche", pon p_por_noche en true (el sistema multiplica por las noches y por las personas). Si hay precio aparte para menores (p. ej. "2 menores, $420 por noche"), usa menores, p_menor_modo "precio" y p_tarifa_menor; si van gratis, p_menor_modo "gratis". No calcules totales tú mismo.',
-    'MATERIAL:\n' + text.slice(0, 40000)
-  ].join('\n\n');
-}
-function busy(on, msg) { $('#impgo').disabled = on; $('#impstop').hidden = !on; $('#impmsg').textContent = msg || ''; $('#impmsg').className = 'impmsg'; }
-const ERR = { not_granted: 'Para leer documentos hay que permitir que esta página use Claude.', sampling_disabled: 'Claude no está disponible para esta cuenta.', rate_limited: 'Se alcanzó el límite de uso. Intenta de nuevo en un rato.', invalid_json: 'No pude convertir la respuesta en datos. Prueba de nuevo o pega solo la parte importante.', prompt_too_large: 'El documento es demasiado largo. Pega solo la parte de la cotización.', images_unavailable: 'Aquí no se pueden leer imágenes. Pega el texto.', image_rejected: 'No se pudo leer esa imagen. Prueba con otra.', session_expired: 'Vuelve a iniciar sesión e inténtalo otra vez.', refused: 'Claude no pudo procesar ese material.' };
-async function runImport() {
-  const sample = await cap('sample');
-  if (!sample) { runLocalImport(); return; }
-  let text = $('#imptext').value.trim(), imgs = [];
-  busy(true, 'Leyendo el material…');
-  try {
-    for (const f of imp.files) { const r = await fileToInput(f); if (r.text) text += '\n\n--- ' + f.name + ' ---\n' + r.text; if (r.images) imgs = imgs.concat(r.images); }
-    if (!text && !imgs.length) { busy(false); notify('Pega texto o elige un archivo primero.', 'err'); return; }
-    if (imgs.length) { const lim = await sample.limits().catch(() => null); if (!lim || !lim.images) { busy(false); notify('Aquí no se pueden leer imágenes. Pega el texto.', 'err'); return; } imgs = imgs.slice(0, lim.images.maxCount); }
-    imp.ctl = new AbortController();
-    const res = await sample.json(importPrompt(text || '(ver imagen adjunta)', $('#impauto').checked), { signal: imp.ctl.signal, images: imgs.length ? imgs : undefined, cache: false });
-    const id = SC.SCHEMA[res && res.plantilla] ? res.plantilla : (!$('#impauto').checked ? state.tpl : null);
-    if (!id) throw { code: 'invalid_json' };
-    state.data[id] = SC.sanitize(id, res.datos); state.tpl = id; state.ex[id] = false; syncBanner();
-    renderTemplates(); renderForm(); renderPreview(); scheduleSave(); showView('preview-hint');
-    busy(false, ''); $('#impmsg').textContent = 'Listo: plantilla «' + VV.TEMPLATES[id].name + '». Revisa los datos antes de descargar.' + (res.notas ? ' ' + res.notas : ''); $('#impmsg').className = 'impmsg ok';
-  } catch (e) {
-    busy(false, '');
-    if (e && e.code === 'cancelled') { $('#impmsg').textContent = 'Lectura cancelada.'; return; }
-    const m = (e && (ERR[e.code] || e.message)) || 'No se pudo leer el material.';
-    $('#impmsg').textContent = m; $('#impmsg').className = 'impmsg bad'; console.error(e);
+/* ---- lectura local de PDF / Word / texto (sin IA) */
+const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+async function pdfLib() {
+  if (!window.pdfjsLib) await loadScript(PDFJS + 'pdf.min.js');
+  const lib = window.pdfjsLib;
+  if (!lib.GlobalWorkerOptions.workerSrc) {
+    try { const t = await (await fetch(PDFJS + 'pdf.worker.min.js')).text(); lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([t], { type: 'text/javascript' })); }
+    catch (e) { lib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js'; }
   }
+  return lib;
 }
+async function pdfPhoto(pdf, lib) { // la imagen más grande de las primeras páginas (portada)
+  let best = null;
+  for (let p = 1; p <= Math.min(pdf.numPages, 3); p++) {
+    const page = await pdf.getPage(p), ops = await page.getOperatorList();
+    for (let i = 0; i < ops.fnArray.length; i++) {
+      if (ops.fnArray[i] !== lib.OPS.paintImageXObject) continue;
+      const nm = ops.argsArray[i][0];
+      const im = await new Promise(res => { const t = setTimeout(() => res(null), 3000); try { (nm.indexOf('g_') === 0 ? page.commonObjs : page.objs).get(nm, o => { clearTimeout(t); res(o); }); } catch (e) { clearTimeout(t); res(null); } });
+      if (!im || !im.width || im.kind === 1 || im.width < 400 || im.width / im.height > 3.5 || im.width / im.height < .6) continue;
+      if (!best || im.width * im.height > best.width * best.height) best = im;
+    }
+  }
+  if (!best) return null;
+  const cv = document.createElement('canvas'); cv.width = best.width; cv.height = best.height; const g = cv.getContext('2d');
+  if (best.bitmap) g.drawImage(best.bitmap, 0, 0);
+  else if (best.data) {
+    const id = g.createImageData(best.width, best.height), s = best.data, d = id.data;
+    if (s.length === best.width * best.height * 4) d.set(s); else for (let i = 0, j = 0; i < s.length; i += 3, j += 4) { d[j] = s[i]; d[j + 1] = s[i + 1]; d[j + 2] = s[i + 2]; d[j + 3] = 255; }
+    g.putImageData(id, 0, 0);
+  } else return null;
+  return new Promise(r => cv.toBlob(r, 'image/jpeg', .9));
+}
+/* algunos PDF (p. ej. exportados de Canva) dibujan ciertas etiquetas letra por letra;
+   si un segmento (entre tabulaciones) es casi todo letras sueltas, lo volvemos a pegar */
+function despace(line) {
+  return line.split('\t').map(seg => {
+    const toks = seg.split(' ');
+    return toks.length >= 3 && toks.filter(t => t.length <= 1).length / toks.length >= .85 ? toks.join('') : seg;
+  }).join('\t');
+}
+async function readPdf(file) {
+  const lib = await pdfLib(), pdf = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  try {
+    const m = await pdf.getMetadata(), sub = (m.info && m.info.Subject) || '';
+    if (sub.indexOf('VVDATA:') === 0) { const o = JSON.parse(decodeURIComponent(escape(atob(sub.slice(7))))); if (o && SC.SCHEMA[o.tpl]) return { saved: o }; }
+  } catch (e) { /* PDF sin metadatos propios */ }
+  const pl = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p), c = await page.getTextContent(), rows = [];
+    c.items.forEach(it => {
+      if (!it.str.trim()) return;
+      const y = Math.round(it.transform[5] / 3); let r = rows.find(q => Math.abs(q.y - y) <= 1);
+      if (!r) rows.push(r = { y, yy: it.transform[5], it: [] }); r.it.push([it.transform[4], it.str, it.width]);
+    });
+    const hp = page.view[3] - page.view[1];
+    rows.sort((a, b) => b.y - a.y).forEach(r => {
+      let s = '', px = null;
+      r.it.sort((a, b) => a[0] - b[0]).forEach(([x, t, w]) => { if (px !== null) { const gp = x - px; s += gp > 9 ? '\t' : gp > .5 ? ' ' : ''; } s += t; px = x + w; });
+      const ln = despace(s.replace(/ +/g, ' ').replace(/ ?\t ?/g, '\t').trim()), edge = r.yy < hp * .12 || r.yy > hp * .92;
+      pl.push({ ln, edge, nm: ln.replace(/\d+/g, '#').toLowerCase(), p });
+    });
+  }
+  const cnt = {}; pl.forEach(x => { if (x.edge) { cnt[x.nm] = cnt[x.nm] || new Set(); cnt[x.nm].add(x.p); } });
+  const lines = pl.filter(x => !(x.edge && cnt[x.nm].size >= 2)).map(x => x.ln);
+  let photo = null; try { photo = await pdfPhoto(pdf, lib); } catch (e) { console.warn(e); }
+  return { text: lines.join('\n'), photo };
+}
+async function readFile(file) {
+  const n = file.name.toLowerCase();
+  if (n.endsWith('.pdf')) return readPdf(file);
+  if (n.endsWith('.docx')) { await loadScript(CDN.mammoth); return { text: (await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value }; }
+  let t = await file.text(); if (/\.html?$/.test(n)) t = t.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, ' ').replace(/<br\s*\/?>|<\/(p|div|li|tr|h\d)>/gi, '\n').replace(/<[^>]+>/g, ' ');
+  return { text: t };
+}
+const MN = { ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8, sep: 9, set: 9, oct: 10, nov: 11, dic: 12 };
+function findDates(s) {
+  const out = [], add = (i, d, m, y) => { if (m && +d >= 1 && +d <= 31 && +y > 1999) out.push({ i, iso: isoD(+d, m, +y) }); }; let m, re;
+  re = /(\d{4})-(\d{2})-(\d{2})/g; while ((m = re.exec(s))) add(m.index, m[3], +m[2], m[1]);
+  re = /(\d{1,2})\s*(?:de\s+)?([a-záéíóú]{3,10})\.?\s*(?:de(?:l)?\s+)?(\d{4})/gi; while ((m = re.exec(s))) add(m.index, m[1], MN[m[2].slice(0, 3).toLowerCase()], m[3]);
+  re = /(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/g; while ((m = re.exec(s))) add(m.index, m[1], +m[2], m[3]);
+  return out.sort((a, b) => a.i - b.i);
+}
+const clean = s => String(s).replace(/\s+/g, ' ').trim();
+const cap1 = s => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+const tcase = s => s.toLowerCase().replace(/(^|[\s(\-–/])([a-záéíóúñ])/g, (m, a, b) => a + b.toUpperCase());
+const sentence = s => /[a-záéíóúñ]/.test(s) ? s : s.split(/(?<=\.)\s+/).map(cap1).join(' ');
+function joinItems(lines) { const out = []; let buf = ''; lines.forEach(l => { buf += (buf ? ' ' : '') + l; if (/[.;!?)]$/.test(l)) { out.push(buf); buf = ''; } }); if (buf) out.push(buf); return out; }
+const STOP = /^(incluye|no incluye|tarifa|importe|precio|total|condiciones|vigencia|observaciones|hoteles?\b|habitaci|que se cumpla|autores de|@|tarifas y promociones)/i;
+const HK = [[/turista/i, 'Hoteles turista · 3 estrellas'], [/primera/i, 'Hoteles primera · 4 estrellas'], [/superior/i, 'Hoteles superior · 5 estrellas']];
+function heads(first, text, n) { const h = HK.filter(k => k[0].test(text)).map(k => k[1]), out = [first]; for (let i = 0; i < n - 1; i++) out.push(h.length >= n - 1 ? h[i] : 'Opción ' + (i + 1)); return out.join(', '); }
+function tableRows(lines, price) {
+  const rows = [];
+  lines.forEach(l => {
+    const c = l.split('\t').map(clean).filter(Boolean);
+    if (c.length >= 3 && c.length <= 4 && !/^(ciudad|categor)/i.test(c[0]) && !c.some(x => /^hoteles\b/i.test(x)) && (!price || /\d/.test(c[1]))) { rows.push(c); return; }
+    if (price) { const m = /^([A-Za-zÁÉÍÓÚÑáéíóúñ ]+?)\s+((?:\d[\d,.]*\s*(?:USD|MXN|EUR)\s*){2,3})$/.exec(clean(l)); if (m) rows.push([clean(m[1])].concat(m[2].match(/\d[\d,.]*\s*(?:USD|MXN|EUR)/g))); }
+  });
+  return rows.map(r => r.map((x, i) => (i === 0 || !price) ? tcase(x) : x));
+}
+/* ---- lectura por plantilla: hotel, vuelo, traslado, paquete */
+const PLANES = [[/todo\s+incluido|all[\s-]?inclusive/i, 'Todo incluido'], [/desayunos?\s+incluidos?|con\s+desayunos?|desayuno\s+buffet/i, 'Desayuno incluido'], [/solo\s+(?:hospedaje|alojamiento)|plan\s+europeo|sin\s+alimentos/i, 'Solo hospedaje'], [/media\s+pensi[oó]n/i, 'Media pensión'], [/pensi[oó]n\s+completa/i, 'Pensión completa']];
+const OCC = [[/individual|sencilla|single/i, 'Sencilla'], [/doble|double/i, 'Doble'], [/triple/i, 'Triple'], [/cu[aá]druple|quad/i, 'Cuádruple'], [/qu[ií]ntuple/i, 'Quíntuple']];
+const cleanName = s => s.replace(/[\u2600-\u27BF\u{1F300}-\u{1FAFF}★*]+/gu, '').replace(/\b\d\s*estrellas?\b/i, '').replace(/^[\s:·\-–]+|[\s:·\-–,]+$/g, '').trim();
+const pad5 = t => t.length === 4 ? '0' + t : t;
+const dateAfter = (T, re, span) => { const m = re.exec(T); return m ? (findDates(T.slice(m.index, m.index + (span || 60)))[0] || null) : null; };
+function rangeDates(T) {
+  const m = /(\d{1,2})\s*(?:de\s+([a-záéíóú]{3,10})\s*)?(?:al|a|-|–)\s*(\d{1,2})\s*de\s+([a-záéíóú]{3,10})\.?(?:\s*(?:de|del)?\s*(\d{4}))?/i.exec(T); if (!m) return null;
+  const m2 = MN[m[4].slice(0, 3).toLowerCase()], m1 = m[2] ? MN[m[2].slice(0, 3).toLowerCase()] : m2; if (!m1 || !m2) return null;
+  let y = +m[5] || new Date().getFullYear(); if (!m[5] && new Date(y, m1 - 1, +m[1]) < new Date()) y++;
+  return [isoD(+m[1], m1, y), isoD(+m[3], m2, m2 < m1 ? y + 1 : y)];
+}
+function fillHotel(T, L, o) {
+  const g = (re, i) => { const m = re.exec(T); return m ? (m[i || 1] || '').trim() : ''; };
+  let hn = g(/(?:hotel|resort|alojamiento|hospedaje)\s*[:\-–]\s*([^\n|·]+)/i);
+  if (!hn) hn = L.find(l => /\b(hotel|resort|villas?|palace|beach|spa|inn|posada|riu|iberostar|barcel[oó]|hyatt|marriott|hilton|dreams|secrets|sandos|paradisus|grand|bah[ií]a)\b/i.test(l) && l.length < 70 && !/^(incluye|no incluye|tarifa|precio|total|vista|habitaci|junior|suite)/i.test(l)) || '';
+  hn = cleanName(hn); if (hn) o.hotel_nombre = hn;
+  const st = /(\d)\s*(?:estrellas?|\*|★)/i.exec(T); if (st) o.estrellas = st[1];
+  const ub = g(/(?:ubicaci[oó]n|ubicado en|zona)\s*[:\-–]?\s*([^\n.]+)/i); if (ub) { o.hotel_ubicacion = ub; const p = ub.split(',').map(x => x.trim()); if (!o.destino) o.destino = p[0]; if (p.length > 1) o.pais = p.slice(1).join(', '); }
+  const dd = g(/(?:destino|viaje a)\s*[:\-–]\s*([^\n]+)/i); if (dd) o.destino = dd.split(',')[0].trim();
+  const rg = rangeDates(T);
+  if (rg) { o.entrada = rg[0]; o.salida = rg[1]; } else { const e = dateAfter(T, /entrada|check[\s-]?in|llegada/i), s = dateAfter(T, /salida|check[\s-]?out|regreso/i); if (e) o.entrada = e.iso; if (s) o.salida = s.iso; }
+  const pl = PLANES.find(x => x[0].test(T)); if (pl) o.plan = pl[1];
+  const oc = OCC.find(x => x[0].test(T));
+  const ca = [...new Set((T.match(/\b(?:junior suite|master suite|suite|deluxe|superior|est[aá]ndar|standard|premium|king|queen|familiar|presidencial|jacuzzi|terraza|balc[oó]n|swim[\s-]?up)\b/gi) || []).map(x => tcase(x)))].sort((x, y) => y.length - x.length).filter((x, i, arr) => !arr.slice(0, i).some(y => y.includes(x)));
+  const tipo = SC.vistaOf(T), obs = ca.join(', ');
+  if (tipo || oc || obs) {
+    const nh = Math.min(+g(/(\d+)\s*habitaci[oó]nes/i) || 1, 6), one = nh === 1;
+    o.habitaciones = Array.from({ length: nh }, () => ({ tipo, ocupacion: oc ? oc[1] : '', adultos: one ? (o.adultos || '') : '', menores: one ? (o.menores || '') : '', edades: one ? (o.edades || '') : '', observaciones: obs, precio: '' }));
+  }
+  if (/por\s+noche/i.test(T) && o.p_modo === 'persona') o.p_por_noche = true;
+  const pk = g(/(?:precio\s+(?:del\s+)?paquete|paquete)\s*[:\-–]?\s*\$\s?([\d,]+(?:\.\d+)?)/i); if (pk && !o.p_tarifa) { o.p_modo = 'paquete'; o.p_tarifa = pk; }
+  { const tp = /total\s+para\s+(\d+)\s+personas?/i.exec(T); if (tp && +o.menores > 0 && o.p_modo === 'persona') o.p_menor_modo = +tp[1] >= (+o.adultos || 0) + (+o.menores || 0) ? 'igual' : 'gratis'; }
+  const mr = [], re = /(?:menor(?:es)?|niñ[oa]s?|infantes?)([^.\n]{0,60}?)(gratis|sin costo|gratuit[oa]|\$\s?[\d,]+(?:\.\d+)?(?:\s*(?:MXN|USD|EUR))?)/gi; let m;
+  while ((m = re.exec(T)) && mr.length < 4) {
+    const r1 = /(\d+)\s*(?:a|-|–)\s*(\d+)\s*años?/i.exec(m[1]), r2 = /(?:de|hasta|menor(?:es)? de)\s*(\d+)\s*años?/i.exec(m[1]);
+    mr.push({ edades: r1 ? `${r1[1]} a ${r1[2]} años` : r2 ? `Menores de ${r2[1]} años` : 'Menores', tarifa: /gratis|sin costo|gratuit/i.test(m[2]) ? 'Gratis' : m[2].trim(), nota: '' });
+  }
+  if (mr.length) o.p_menores = mr;
+}
+const AIRL = /(aerom[eé]xico|volaris|viva\s*aerob[uú]s|latam|avianca|american\s*airlines|united(?:\s*airlines)?|delta|copa(?:\s*airlines)?|aerol[ií]neas\s*argentinas|iberia|air\s*france|klm|lufthansa|jetblue|spirit|southwest|alaska|british\s*airways|turkish|emirates|qatar|sky\s*airline|jetsmart|wingo|arajet|magnicharters)/i;
+const NOCODE = new Set(['MXN', 'USD', 'EUR', 'IVA', 'PDF', 'RFC', 'PNR', 'TUA', 'ADT', 'CHD', 'INF']);
+const gg = (re, S, i) => { const m = re.exec(S); return m ? (m[i || 1] || '').trim() : ''; };
+function optionBlocks(T) { const b = T.split(/(?=^[^\p{L}\n]*opci[oó]n\s*\d+)/imu).filter(c => /^[^\p{L}\n]*opci[oó]n\s*\d+/iu.test(c)); return b.length > 1 ? b : [T]; }
+function splitVuelta(b) { const iv = b.search(/^\s*(?:vuelo\s+de\s+|tramo\s+de\s+|traslado\s+de\s+)?(?:vuelta|regreso|retorno)\b/im); return iv > 0 ? [b.slice(0, iv), b.slice(iv)] : [b, '']; }
+function optExtras(b, r) {
+  const pr = /(?:precio|tarifa|total|costo)[^\d$\n]*\$\s?([\d,]+(?:\.\d{1,2})?)\s*(MXN|USD|EUR)?/i.exec(b); if (pr) r.precio = '$' + pr[1] + (pr[2] ? ' ' + pr[2] : '');
+  const ls = b.split('\n').map(clean), i = ls.findIndex(l => /^incluye\b/i.test(l));
+  if (i >= 0) { const inc = []; for (let k = i + 1; k < ls.length && ls[k] && !/^(no incluye|precio|tarifa|total|opci)/i.test(ls[k]); k++) inc.push(ls[k].replace(/^[•·\-–✓✔\s]+/, '')); const t = (ls[i].replace(/^incluye\s*[:\-–]?\s*/i, '') + (inc.length ? '\n' + inc.join('\n') : '')).trim(); if (t) r.incluye = t; }
+  return r;
+}
+const AC = { morelia: 'MLM', cancun: 'CUN', guadalajara: 'GDL', 'ciudad de mexico': 'MEX', cdmx: 'MEX', mexico: 'MEX', monterrey: 'MTY', tijuana: 'TIJ', merida: 'MID', 'puerto vallarta': 'PVR', 'los cabos': 'SJD', 'cabo san lucas': 'SJD', 'san jose del cabo': 'SJD', oaxaca: 'OAX', veracruz: 'VER', leon: 'BJX', queretaro: 'QRO', toluca: 'TLC', villahermosa: 'VSA', 'tuxtla gutierrez': 'TGZ', acapulco: 'ACA', zihuatanejo: 'ZIH', huatulco: 'HUX', chihuahua: 'CUU', hermosillo: 'HMO', culiacan: 'CUL', mazatlan: 'MZT', 'la paz': 'LAP', cozumel: 'CZM', tapachula: 'TAP', 'ciudad juarez': 'CJS', 'san luis potosi': 'SLP', aguascalientes: 'AGU', durango: 'DGO', torreon: 'TRC', puebla: 'PBC', 'campeche': 'CPE', 'chetumal': 'CTM', 'tampico': 'TAM', 'reynosa': 'REX', 'bogota': 'BOG', medellin: 'MDE', panama: 'PTY', madrid: 'MAD', miami: 'MIA', 'los angeles': 'LAX', 'nueva york': 'JFK', 'new york': 'JFK', 'buenos aires': 'EZE', lima: 'LIM', santiago: 'SCL', orlando: 'MCO', 'las vegas': 'LAS', 'san salvador': 'SAL', guatemala: 'GUA', 'la habana': 'HAV', 'punta cana': 'PUJ', 'san jose': 'SJO', chicago: 'ORD', houston: 'IAH', dallas: 'DFW', 'san francisco': 'SFO', barcelona: 'BCN', paris: 'CDG', londres: 'LHR', roma: 'FCO' };
+const codeOf = c => AC[c.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()] || '';
+function inferIso(d, mon, y, notBefore) {
+  const m = MN[mon.slice(0, 3).toLowerCase()]; if (!m) return ''; let yy = +y || 0; const t = new Date(); t.setHours(0, 0, 0, 0);
+  if (!yy) { yy = t.getFullYear(); if (new Date(yy, m - 1, +d) < t) yy++; }
+  let iso = isoD(+d, m, yy); if (notBefore && iso < notBefore && !y) iso = isoD(+d, m, yy + 1); return iso;
+}
+const time24 = (h, mi, ap) => { let H = +h; if (ap) { ap = ap.toLowerCase(); if (ap === 'p' && H < 12) H += 12; if (ap === 'a' && H === 12) H = 0; } return String(H).padStart(2, '0') + ':' + mi; };
+const DT = '(\\d{1,2})\\s+de\\s+([a-záéíóú]+)(?:\\s+de(?:l)?\\s+(\\d{4}))?', TM = '(?:a\\s+las\\s+)?(\\d{1,2}):(\\d{2})\\s*([ap])?\\.?\\s*m?\\.?';
+const legRe = verb => new RegExp('(?:' + verb + ')\\s+de\\s+(.+?)\\s*(?:\\(([^)]+)\\))?\\s*' + DT + '\\s*[-–—,]?\\s*' + TM + '\\s*[,.;]?\\s*(?:y\\s+)?(?:aterriza|llega)\\s+en\\s+(.+?)\\s*(?:\\(([^)]+)\\))?\\s*' + DT + '\\s*[-–—,]?\\s*' + TM, 'i');
+function naturalFlight(b) { // «Sale de X … aterriza en Y …»; si hay varios tramos seguidos, los intermedios son escalas
+  const J = b.replace(/\s+/g, ' ').trim(), g = new RegExp(legRe('sale|salida|regresa|regreso|vuelta|retorno|despega').source, 'gi'), legs = []; let m;
+  while ((m = g.exec(J))) {
+    const tail = J.slice(m.index + m[0].length, m.index + m[0].length + 70), fv = /vuelo\s+([A-Z0-9]{2})\s?(\d{2,4})\b/.exec(tail);
+    legs.push({ ret: /^(?:regresa|regreso|vuelta|retorno)/i.test(m[0]), i: m.index, c1: clean(m[1]), a1: m[2] || '', d1: [m[3], m[4], m[5]], t1: [m[6], m[7], m[8]], c2: clean(m[9]), a2: m[10] || '', d2: [m[11], m[12], m[13]], t2: [m[14], m[15], m[16]], f: fv ? fv[1] + ' ' + fv[2] : '' });
+  }
+  if (!legs.length) return null;
+  const ri = legs.findIndex(l => l.ret); let LI = ri < 0 ? legs : legs.slice(0, ri), LV = ri < 0 ? [] : legs.slice(ri); if (!LI.length) { LI = LV; LV = []; }
+  const r = { tipo: LV.length ? 'Ida y vuelta' : 'Solo ida' }, tm = t => time24(t[0], t[1], t[2]);
+  const hd = /opci[oó]n\s*\d+\s*[:\-–]?\s*([^\n]*?)(?=\s+(?:sale|salida|despega)\b)/i.exec(J); let aer = '';
+  if (hd) { const w = []; for (const x of hd[1].replace(/[^\p{L}\s]/gu, ' ').split(/\s+/).filter(Boolean)) { if (/^(con|sin|directo|escala|escalas|vuelo|ida|vuelta|redondo|solo|de|la|el)$/i.test(x)) break; w.push(x); if (w.length >= 3) break; } aer = w.join(' '); }
+  if (aer) r.aerolinea = tcase(aer); else if (AIRL.exec(J)) r.aerolinea = tcase(AIRL.exec(J)[0]);
+  const chain = (L, ida, prev0) => {
+    let prev = prev0 || ''; const D = L.map(l => { const a = inferIso(l.d1[0], l.d1[1], l.d1[2], prev), z = inferIso(l.d2[0], l.d2[1], l.d2[2], a); prev = z; return [a, z]; });
+    const f = L[0], z = L[L.length - 1], k = ida ? 'ida' : 'vta', lastD = D[D.length - 1][1];
+    r['fecha_' + k] = D[0][0]; r['hora_sal_' + k] = tm(f.t1); r['hora_lleg_' + k] = tm(z.t2); if (lastD !== D[0][0]) r['fecha_lleg_' + k] = lastD; if (f.f) r['vuelo_' + k] = f.f;
+    const st = L.slice(0, -1).map((l, i) => ({ lugar: withCode(l.c2), espera: '', hora_lleg: tm(l.t2), hora_sal: tm(L[i + 1].t1), vuelo: L[i + 1].f, nota: '' })); if (st.length) r['esc_' + k] = st;
+    return lastD;
+  };
+  const fi = LI[0], zi = LI[LI.length - 1];
+  r.ciudad_origen = fi.c1; r.aer_origen = fi.a1; r.cod_origen = codeOf(fi.c1); r.ciudad_destino = zi.c2; r.aer_destino = zi.a2; r.cod_destino = codeOf(zi.c2);
+  const endIda = chain(LI, true, ''); if (LV.length) chain(LV, false, endIda);
+  const ia = LV.length ? LV[0].i : J.length; applyLeg(r, legExtras(J.slice(0, ia)), 'ida'); if (LV.length) applyLeg(r, legExtras(J.slice(ia)), 'vta');
+  const fl = /vuelo\s+([A-Z0-9]{2})\s?(\d{2,4})\b/.exec(J); if (fl && !r.vuelo_ida) r.vuelo_ida = fl[1] + ' ' + fl[2];
+  const im = /\bincluye\s+(.+?)\.(?=\s|$)/i.exec(J), inc = im ? im[1] : '';
+  if (inc) { r.incluye = inc.charAt(0).toUpperCase() + inc.slice(1); r.eq_doc = /maleta\s+documentada|equipaje\s+documentad|maleta\s+de\s+\d+\s*kg/i.test(inc) ? 'si' : 'no'; if (/bolso|mochila|art[ií]culo personal|cartera/i.test(inc)) r.eq_mochila = 'si'; if (/equipaje de mano|maleta de mano|carry/i.test(inc)) r.eq_mano = 'si'; }
+  const cl = /(econ[oó]mica|turista|business|ejecutiva|primera clase|premium)/i.exec(J); if (cl) r.clase = cap1(cl[1]);
+  const pp = /\$\s?([\d,]+(?:\.\d+)?)\s*(?:MXN|USD|EUR)?\s*por\s+persona/i.exec(J), tt = /\$\s?([\d,]+(?:\.\d+)?)\s*(?:MXN|USD|EUR)?\s*en\s+total(?:\s+por\s+(?:los\s+)?(\d+))?/i.exec(J);
+  r.precio = [pp ? `$${pp[1]} por persona` : '', tt ? `$${tt[1]} en total` + (tt[2] ? ` por los ${tt[2]}` : '') : ''].filter(Boolean).join(' · '); r._pp = pp ? pp[1].replace(/,/g, '') : ''; r._n = tt && tt[2] ? tt[2] : '';
+  const end = Math.max(pp ? pp.index + pp[0].length : 0, tt ? tt.index + tt[0].length : 0), tail = J.slice(end).replace(/^[^\p{L}]+/u, '').trim(); r._tail = tail.length > 20 && !/^(opci|sale)/i.test(tail) ? tail : '';
+  return r;
+}
+const normDur = x => { const c = String(x).trim(), t = /^(\d{1,2}):(\d{2})/.exec(c); if (t) return [+t[1] ? +t[1] + ' h' : '', +t[2] ? +t[2] + ' m' : ''].filter(Boolean).join(' '); return c.replace(/\s*(?:horas?|hrs?)\b\.?/i, ' h').replace(/\s*minutos?\b|\s*min\b/i, ' m').replace(/\s+y\s+/i, ' ').replace(/\s+/g, ' ').trim(); };
+const DUR = '(\\d{1,2}:\\d{2}\\s*(?:hrs?|horas?|h)\\b\\.?|\\d+\\s*h(?:rs?|oras?)?\\b\\.?(?:\\s*(?:y\\s*)?\\d+\\s*m(?:in(?:utos?)?)?)?|\\d+\\s*min(?:utos?)?)';
+const tm24 = x => { const m = /(\d{1,2}):(\d{2})\s*([ap])?/i.exec(x || ''); return m ? time24(m[1], m[2], m[3]) : ''; };
+const nz = x => String(x).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\(.*?\)/g, '').toLowerCase().trim();
+const withCode = c => { const k = codeOf(c); return k && !/\(/.test(c) ? `${c} (${k})` : c; };
+function legExtras(S) { // duración total y escalas (dónde, cuánto dura, horas) de un tramo, con varias formas de redactarlas
+  const dm = new RegExp('duraci[oó]n(?:\\s+total)?(?:\\s+del\\s+vuelo)?\\s*[:\\-–]?\\s*' + DUR, 'i').exec(S), esc = []; let m;
+  const add = (lug, par, du, idx) => {
+    lug = clean(lug || '').replace(/^(?:la|el)\s+/i, ''); if (!lug || lug.length > 45 || esc.some(e => nz(e.lugar) === nz(lug))) return;
+    const cm = new RegExp(lug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^()\\n]{0,40}\\(([A-Z]{3})\\)').exec(S.slice(idx, idx + 220)); if (cm && !/\(/.test(lug)) lug += ` (${cm[1]})`;
+    const ctx = S.slice(idx, idx + 160), ll = /(?:llega(?:da)?|arriba)[^\d\n]{0,20}(\d{1,2}:\d{2}\s*[ap]?\.?\s*m?)/i.exec(ctx), sa = /(?:sale|salida|despega)[^\d\n]{0,20}(\d{1,2}:\d{2}\s*[ap]?\.?\s*m?)/i.exec(ctx);
+    esc.push({ lugar: withCode(lug), espera: normDur(((par && !/llega|sale/i.test(par) && (!/:/.test(par) || /\d:\d{2}\s*(?:hrs?|horas?|h)\b/i.test(par)) ? par : '') || du || '').replace(/^de\s+/i, '')), hora_lleg: ll ? tm24(ll[1]) : '', hora_sal: sa ? tm24(sa[1]) : '', vuelo: '', nota: '' });
+  };
+  const r1 = new RegExp('(?:escalas?|conexi[oó]n(?:es)?|stopover)(?:\\s+t[eé]cnica)?(?:\\s+(?:en|por)|\\s*:)\\s+([^.,;()\\n]+?)(?:\\s*\\(([^)]*\\d[^)]*)\\)|(?:\\s*[,\\-–]\\s*|\\s+(?:de|con|durante)\\s+)' + DUR + ')?(?=[.,;\\n]|$| y | con )', 'gi');
+  while ((m = r1.exec(S))) add(m[1], m[2], m[3], m.index);
+  const r2 = new RegExp(DUR + '\\s*[-–—:]?\\s*(?:de\\s+)?escala\\s+en\\s+([^.,;()\\n]+)', 'gi'); while ((m = r2.exec(S))) add(m[2], '', m[1], m.index);
+  const r3 = new RegExp('escalas?\\s+(?:de|por)\\s+' + DUR + '\\s*(?:,|\\s+en|\\s*[-–:])\\s*([^.,;()\\n]+)', 'gi'); while ((m = r3.exec(S))) add(m[2], '', m[1], m.index);
+  const r4 = /\bv[ií]a\s+([A-ZÁÉÍÓÚÑ][\wáéíóúñ.\- ]{2,28}?)(?=[.,;\n(]|$| con )/g; while ((m = r4.exec(S))) add(m[1], '', '', m.index);
+  const r5 = /\b(?:\d|una|dos)\s+escalas?\s*\(([^)]+)\)/gi; while ((m = r5.exec(S))) m[1].split(/\s*(?:,| y )\s*/).forEach(x => add(x, '', '', m.index));
+  const cnt = /\b(\d|una|dos|tres)\s+escalas?\b/i.exec(S);
+  return { dur: dm ? normDur(dm[1]) : '', esc, res: /directo|sin escalas|nonstop/i.test(S) ? 'Directo' : (!esc.length && cnt ? cap1(cnt[0]) : '') };
+}
+function applyLeg(r, x, k) {
+  if (x.dur && !r['duracion_' + k]) r['duracion_' + k] = x.dur;
+  const cur = r['esc_' + k];
+  if (cur && cur.length) x.esc.forEach(e => { const st = cur.find(c => nz(c.lugar).includes(nz(e.lugar)) || nz(e.lugar).includes(nz(c.lugar))); if (st) ['espera', 'hora_lleg', 'hora_sal', 'nota'].forEach(f => { if (!st[f] && e[f]) st[f] = e[f]; }); });
+  else if (x.esc.length) r['esc_' + k] = x.esc; else if (x.res && !r['escalas_' + k]) r['escalas_' + k] = x.res;
+}
+function flightFrom(b) {
+  const nat = naturalFlight(b); if (nat) return nat;
+  const r = {}, [A, V] = splitVuelta(b);
+  const fn = S => { let m = /(?:vuelo|flight)\s*(?:n[ºo°]\.?|n[uú]m\.?|#)?\s*[:\-–]?\s*([A-Z0-9]{2})\s?(\d{2,4})\b/i.exec(S); if (!m) m = /\b([A-Z]{2}|[A-Z]\d|\d[A-Z])\s?(\d{3,4})\b/.exec(S); return m ? (m[1] + ' ' + m[2]).toUpperCase() : ''; };
+  const codes = S => { const out = [], re = /([A-Za-záéíóúñ. ]{3,30}?)\s*\(([A-Z]{3})\)/g; let m; while ((m = re.exec(S))) if (!NOCODE.has(m[2])) out.push({ city: clean(m[1]).replace(/^(?:de|desde|a|hacia|salida|llegada|origen|destino)\s+/i, ''), code: m[2] });
+    if (out.length < 2) { const m2 = /\b([A-Z]{3})\b\s*(?:→|->|[-–—]|\ba\b|\bto\b|\bhacia\b)\s*\b([A-Z]{3})\b/.exec(S); if (m2 && !NOCODE.has(m2[1]) && !NOCODE.has(m2[2])) return [{ city: '', code: m2[1] }, { city: '', code: m2[2] }]; } return out; };
+  const tm = S => S.match(/\b\d{1,2}:\d{2}\b/g) || [], es = S => cap1((/(directo|sin escalas|nonstop|\d\s*escalas?|una escala|dos escalas)/i.exec(S) || [''])[0]);
+  const al = gg(/aerol[ií]nea\s*[:\-–]\s*([^\n|·]+)/i, b) || (AIRL.exec(b) || [''])[0]; if (al) r.aerolinea = tcase(al);
+  const cA = codes(A); if (cA[0]) { r.cod_origen = cA[0].code; r.ciudad_origen = cA[0].city; } if (cA[1]) { r.cod_destino = cA[1].code; r.ciudad_destino = cA[1].city; }
+  r.vuelo_ida = fn(A); const tA = tm(A); if (tA[0]) r.hora_sal_ida = pad5(tA[0]); if (tA[1]) r.hora_lleg_ida = pad5(tA[1]);
+  const dA = findDates(A); if (dA[0]) r.fecha_ida = dA[0].iso; applyLeg(r, legExtras(A), 'ida'); if (!r.escalas_ida && !r.esc_ida && es(A)) r.escalas_ida = es(A);
+  r.tipo = V || /ida\s*y\s*(?:vuelta|regreso)|redondo|round\s*trip/i.test(b) ? 'Ida y vuelta' : 'Solo ida';
+  if (r.tipo === 'Ida y vuelta') { if (V) { r.vuelo_vta = fn(V); const tV = tm(V), dV = findDates(V); if (tV[0]) r.hora_sal_vta = pad5(tV[0]); if (tV[1]) r.hora_lleg_vta = pad5(tV[1]); if (dV[0]) r.fecha_vta = dV[0].iso; applyLeg(r, legExtras(V), 'vta'); if (!r.escalas_vta && !r.esc_vta && es(V)) r.escalas_vta = es(V); } else if (dA[1]) r.fecha_vta = dA[1].iso; }
+  const cl = /(econ[oó]mica|turista|business|ejecutiva|primera clase|premium)/i.exec(b); if (cl) r.clase = cap1(cl[1]);
+  const bag = (re, k) => { const m = re.exec(b); if (m) r[k] = /\b(no incluye|sin)\b[^.\n]*$/i.test(b.slice(Math.max(0, m.index - 40), m.index + m[0].length)) ? 'no' : 'si'; };
+  bag(/(?:maleta|equipaje)\s+documentad[oa]|equipaje\s+facturado|\bbodega\b/i, 'eq_doc'); bag(/equipaje de mano|maleta de mano|carry[\s-]?on/i, 'eq_mano'); bag(/mochila|cartera|art[ií]culo personal/i, 'eq_mochila');
+  const ci = gg(/web\s*check-?in\s*[:#]?\s*([A-Z0-9]{5,8})/i, b); if (ci) r.checkin = ci; const pn = gg(/(?:reservaci[oó]n|reserva|pnr|localizador)\s*[:#]?\s*([A-Z0-9]{5,8})\b/i, b); if (pn) r.pnr = pn.toUpperCase();
+  return optExtras(b, r);
+}
+const MEDIOS = [[/charter/i, 'Charter'], [/autob[uú]s|\bbus\b/i, 'Autobús'], [/sprinter|\bvan\b|minivan/i, 'Van'], [/camioneta|suburban/i, 'Camioneta'], [/auto privado/i, 'Auto privado'], [/lancha|ferry/i, 'Lancha'], [/tren/i, 'Tren']];
+function transferFrom(b) {
+  const r = {}, [A, V] = splitVuelta(b), md = MEDIOS.find(x => x[0].test(b)); if (md) r.transporte = md[1];
+  const em = gg(/(?:empresa|operador|compañ[ií]a|proveedor)\s*[:\-–]\s*([^\n]+)/i, b); if (em) r.empresa = em;
+  r.origen = gg(/(?:origen|desde)\s*[:\-–]\s*([^\n]+)/i, A); r.destino = gg(/(?:destino|hasta|hacia)\s*[:\-–]\s*([^\n]+)/i, A);
+  if (!r.origen || !r.destino) { const m = /^(?:.*?:\s*)?([^\n→:]{3,40}?)\s*(?:→|->|[–—])\s*([^\n,.;]{3,40})/m.exec(A); if (m) { r.origen = r.origen || clean(m[1]); r.destino = r.destino || clean(m[2]); } }
+  const tA = A.match(/\b\d{1,2}:\d{2}\b/g) || [], dA = findDates(A); if (dA[0]) r.fecha_ida = dA[0].iso; if (tA[0]) r.hora_ida = pad5(tA[0]); if (tA[1]) r.hora_lleg_ida = pad5(tA[1]);
+  r.tipo = V || /redondo|ida\s*y\s*(?:vuelta|regreso)|round/i.test(b) ? 'Redondo' : 'Sencillo';
+  if (r.tipo === 'Redondo') { const tV = V.match(/\b\d{1,2}:\d{2}\b/g) || [], dV = findDates(V); if (dV[0]) r.fecha_vta = dV[0].iso; else if (dA[1]) r.fecha_vta = dA[1].iso; if (tV[0]) r.hora_vta = pad5(tV[0]); if (tV[1]) r.hora_lleg_vta = pad5(tV[1]); }
+  const pu = gg(/(?:punto de (?:abordaje|encuentro|salida)|abordaje|lugar de salida)\s*[:\-–]?\s*([^\n]+)/i, b); if (pu) r.punto = pu;
+  const du = gg(/duraci[oó]n\s*[:\-–]?\s*([^\n]+)/i, b); if (du) r.duracion = du;
+  const px = gg(/(\d+)\s*(?:pasajeros|pax|plazas|asientos)/i, b); if (px) r.pasajeros = px;
+  return optExtras(b, r);
+}
+function parsePax(L) {
+  const out = [];
+  L.forEach((l, i) => {
+    const m = /^(?:pasajero\s*\d*\s*[:\-–]\s*)?([A-ZÁÉÍÓÚÑ]{2,}(?:\s[A-ZÁÉÍÓÚÑ]{2,})*)\s*\/\s*([A-ZÁÉÍÓÚÑ]{2,}(?:\s[A-ZÁÉÍÓÚÑ]{2,})*)/.exec(l), m2 = !m && /^pasajero\s*\d*\s*[:\-–]\s*(.+)$/i.exec(l);
+    if (m || m2) { const et = /(\d{3})[- ]?(\d{10})/.exec(l + ' ' + (L[i + 1] || '')); out.push({ nombre: m ? m[1] + ', ' + m[2] : m2[1].trim(), eticket: et ? et[1] + et[2] : '' }); }
+  });
+  return out;
+}
+/* boleto/comprobante de reservación de vuelo (el formato propio de la agencia: pasajeros con número de
+   eTicket, tramos «Ida»/«Vuelta» con aerolínea, número de vuelo, fechas y horas, código de web check-in,
+   ruta con código de aeropuerto y equipaje incluido/no incluido) */
+function isTicketVuelo(T) { return /vuelo\s+\S+\t.+\tduraci[oó]n\t/i.test(T) && /c[oó]digodewebcheck-?in|c[oó]digo\s*de\s*web\s*check-?in/i.test(T.replace(/\s+/g, '')); }
+function fechaHoraTicket(s) {
+  const m = /(\d{1,2})\s+([A-ZÁÉÍÓÚ]{3,4})\.?\s+(\d{4})\s+(\d{1,2}):(\d{2})/i.exec(s || ''); if (!m) return null;
+  const mon = MN[m[2].slice(0, 3).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')]; if (!mon) return null;
+  return { fecha: isoD(+m[1], mon, +m[3]), hora: m[4].padStart(2, '0') + ':' + m[5] };
+}
+function ticketVueloFrom(T) {
+  const L = T.split('\n').map(l => l.trim());
+  const pasajeros = [], legs = []; let section = null, cur = null, numero_reserva = '';
+  L.forEach(l => { if (!numero_reserva && /^\d{8,15}$/.test(l)) numero_reserva = l; });
+  L.forEach(l => {
+    if (!l) return;
+    if (/^pasajeros$/i.test(l)) { section = 'pax'; return; }
+    if (/^(ida|vuelta|regreso)$/i.test(l)) { section = 'leg'; cur = { key: /^ida$/i.test(l) ? 'ida' : 'vta' }; legs.push(cur); return; }
+    if (section === 'pax') { const m = /^(.+?)\t(\S+-\d+)$/.exec(l); if (m && !/^apellido/i.test(m[1])) pasajeros.push({ nombre: clean(m[1]), eticket: m[2] }); return; }
+    if (section !== 'leg' || !cur) return;
+    const fm = /^Vuelo\s+(\S+)\t(.+?)\t[Dd]uraci[oó]n\t(.+)$/.exec(l);
+    if (fm) { cur.vuelo = fm[1]; cur.salidaRaw = fm[2]; cur.llegadaRaw = fm[3]; return; }
+    if (!cur.vuelo && !/\t/.test(l) && !/check-?in/i.test(l) && l.length < 30 && !/^salida/i.test(l)) { cur.aerolinea = (cur.aerolinea ? cur.aerolinea + ' ' : '') + l; return; }
+    if (!cur.duracion && /^\d+\s*h(?:\s*\d+\s*m)?$/i.test(l)) { cur.duracion = l.replace(/(\d+)\s*h\s*(\d+)\s*m/i, '$1 h $2 m'); return; }
+    const rm = /check-?in\t(.+?)\t(.+?)\t(.+)$/i.exec(l);
+    if (rm) { cur.origRoute = rm[1]; cur.clase = rm[2]; cur.destRoute = rm[3]; return; }
+    const cm = /^([A-Z0-9]{5,8})\t(.+?)\t(.+)$/.exec(l);
+    if (cm && cur.origRoute && !cur.checkin) { cur.checkin = cm[1]; cur.aerOrig = cm[2]; cur.aerDest = cm[3]; return; }
+    if (cur.checkin && !cur.aerOrigDone && !/\t/.test(l) && l.length < 60 && !/^incluye|^no incluye/i.test(l)) { cur.aerOrig += ' ' + l; return; }
+    if (/^incluye|no incluye/i.test(l)) {
+      const parts = l.split('\t'); cur.aerOrigDone = true;
+      cur.eq_mochila = /no incluye/i.test(parts[0]) ? 'no' : 'si';
+      if (parts[1]) cur.eq_mano = /no incluye/i.test(parts[1]) ? 'no' : 'si';
+      if (parts[2]) cur.eq_doc = /no incluye/i.test(parts[2]) ? 'no' : 'si';
+    }
+  });
+  if (!legs.length) return null;
+  const o = { tipo: legs.length > 1 ? 'Ida y vuelta' : 'Solo ida', aerolinea: '' };
+  const codeRe = /^([A-Z]{3})(.+?)\(([A-Z]{2,3})\)$/;
+  legs.forEach(leg => {
+    const k = leg.key, sd = fechaHoraTicket(leg.salidaRaw), ld = fechaHoraTicket(leg.llegadaRaw);
+    if (leg.aerolinea) o.aerolinea = leg.aerolinea;
+    if (leg.vuelo) o['vuelo_' + k] = leg.vuelo;
+    if (sd) { o['fecha_' + k] = sd.fecha; o['hora_sal_' + k] = sd.hora; }
+    if (ld) { o['hora_lleg_' + k] = ld.hora; if (sd && ld.fecha !== sd.fecha) o['fecha_lleg_' + k] = ld.fecha; }
+    if (leg.duracion) o['duracion_' + k] = leg.duracion;
+    if (leg.checkin) o.checkin = leg.checkin;
+    if (leg.clase) o.clase = leg.clase;
+    if (leg.eq_mochila) o.eq_mochila = leg.eq_mochila; if (leg.eq_mano) o.eq_mano = leg.eq_mano; if (leg.eq_doc) o.eq_doc = leg.eq_doc;
+    if (k === 'ida') { // los códigos/aeropuertos van una sola vez: el tramo de vuelta usa los mismos, invertidos
+      const om = codeRe.exec(leg.origRoute || ''); if (om) { o.cod_origen = om[1]; o.ciudad_origen = clean(om[2]); }
+      const dm = codeRe.exec(leg.destRoute || ''); if (dm) { o.cod_destino = dm[1]; o.ciudad_destino = clean(dm[2]); }
+      if (leg.aerOrig) o.aer_origen = clean(leg.aerOrig); if (leg.aerDest) o.aer_destino = clean(leg.aerDest);
+    }
+  });
+  if (numero_reserva) o.pnr = numero_reserva;
+  return { numero_reserva, pasajeros, destino: o.ciudad_destino, op_vuelos: [o] };
+}
+function fillByTemplate(id, T, L, o, Lt) {
+  if (id === 'hotel' || id === 'paquete') fillHotel(T, L, o);
+  const Traw = (Lt || L).join('\n');
+  if ((id === 'vuelo' || id === 'paquete') && isTicketVuelo(Traw)) {
+    const tk = ticketVueloFrom(Traw);
+    if (tk) {
+      if (tk.pasajeros.length) o.pasajeros = tk.pasajeros;
+      if (tk.op_vuelos.length) o.op_vuelos = tk.op_vuelos;
+      if (id === 'vuelo') { if (tk.destino && !o.destino) o.destino = tk.destino; if (tk.numero_reserva) { o.tipo_doc = 'reservacion'; o.numero_reserva = tk.numero_reserva; } delete o.incluye; delete o.no_incluye; }
+      return;
+    }
+  }
+  if (id === 'vuelo' || id === 'paquete' || id === 'traslado') { const p = parsePax(L); if (p.length) o.pasajeros = p; }
+  if (id === 'vuelo' || (id === 'paquete' && /vuelo|aerol[ií]nea|aterriza|\([A-Z]{3}\)/i.test(T))) {
+    const f = optionBlocks(T).map(flightFrom).filter(x => x.cod_origen || x.fecha_ida || x.vuelo_ida || x.aerolinea); if (f.length) o.op_vuelos = f;
+    if (id === 'vuelo' && f[0] && f[0].ciudad_destino && !o.destino) o.destino = f[0].ciudad_destino;
+    if (f.length) {
+      const tail = f.map(x => x._tail).filter(Boolean).pop(); if (tail) o.observaciones = tail;
+      const nn = /en\s+total\s+por\s+(?:los\s+)?(\d+)/i.exec(T); if (nn && !o.adultos) o.adultos = nn[1];
+      if (f.length === 1 && f[0]._pp) { o.p_modo = 'persona'; o.p_unidad = 'persona'; o.p_tarifa = f[0]._pp; o.p_cantidad = f[0]._n || ''; }
+      f.forEach(x => { delete x._tail; delete x._pp; delete x._n; });
+      if (id === 'vuelo') { delete o.incluye; delete o.no_incluye; }
+    }
+  }
+  const ti = T.search(/^\s*(?:traslado|transfer)\b/im);
+  if (id === 'traslado' || (id === 'paquete' && ti >= 0)) {
+    const f = optionBlocks(id === 'paquete' ? T.slice(ti, ti + 600) : T).map(transferFrom).filter(x => x.origen || x.destino || x.fecha_ida || x.transporte); if (f.length) o.op_traslados = f;
+  }
+  if ((id === 'vuelo' || id === 'traslado') && (o.op_vuelos || []).length + (o.op_traslados || []).length > 1) { delete o.p_modo; delete o.p_total; delete o.p_tarifa; delete o.p_unidad; }
+}
+
+function parseDoc(text, force) { // si el texto trae varias opciones de hotel («Opción 1», «Opción 2»…), cada una pasa a su propio hotel
+  const id = force || state.tpl, bl = id === 'hotel' ? optionBlocks(text) : [text];
+  if (bl.length > 1) {
+    const rs = bl.map(b => parseOne(b, id)), rows = rs.map(r => (r.data.hoteles || [])[0]).filter(Boolean);
+    if (rows.length > 1) return { id, data: Object.assign({}, rs[0].data, { hoteles: rows }), msg: rows.length + ' opciones de hotel, cada una con su habitación y precio.' };
+  }
+  return parseOne(text, force);
+}
+function parseOne(text, force) {
+  const emoji = /[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/u.test(text) ? parseMessage(text) : null;
+  const FOOT = l => l.replace(/https?:\/\/\S+|www\.\S+/gi, '').replace(/\d{1,2}\/\d{1,2}\/\d{2,4},?\s*\d{1,2}:\d{2}(?:\s*[ap]\.?\s*m\.?)?/gi, '').replace(/p[áa]gina\s+\d+\s+de\s+\d+/gi, '').trim();
+  const Lt = text.replace(/\r/g, '').split('\n').map(x => FOOT(x.replace(/[ \u00a0]+/g, ' ').trim()).replace(/^\t+|\t+$/g, '')).filter(Boolean);
+  const L = Lt.map(l => l.replace(/\t+/g, ' ')), T = L.join('\n'), o = {};
+  const sec = { _: [] }; let key = '_';
+  Lt.forEach(l => { const m = /^[-–—]{3,}\s*[•·]?\s*(.+)$/.exec(l); if (m) { key = m[1].toLowerCase(); sec[key] = sec[key] || []; } else sec[key].push(l); });
+  const sk = re => Object.keys(sec).find(k => re.test(k)), sl = re => { const k = sk(re); return k ? sec[k] : []; };
+  const g = (re, i) => { const m = re.exec(T); return m ? (m[i || 1] || '').trim() : ''; };
+  // itinerario
+  const days = []; let cur = null; const sectioned = !!sk(/^itinerario/);
+  (sectioned ? sl(/^itinerario/).map(l => l.replace(/\t+/g, ' ')) : L).forEach(l => {
+    const m = /^(?:d[ií]a\s*(\d+)|(\d+)\s*[°ºo.]?\s*d[ií]a)\s*[:.\-–—]*\s*(.*)$/i.exec(l);
+    if (m) { cur = { dia: String(+(m[1] || m[2])), titulo: m[3] || '', texto: '' }; days.push(cur); }
+    else if (cur && !sectioned && STOP.test(l)) cur = null; else if (cur) cur.texto += (cur.texto ? ' ' : '') + l;
+  });
+  const du = /(\d+)\s*d[ií]as?\s*\/\s*(\d+)\s*noches?/i.exec(T); if (du) { o.dias = du[1]; o.noches = du[2]; }
+  const h0 = sl(/^_$/).map(l => l.replace(/\t+/g, ' ')), di = h0.findIndex(l => /\d+\s*d[ií]as?\s*\/\s*\d+\s*noches?/i.test(l));
+  if (di >= 0 && h0[di + 1] && !/^salidas?:/i.test(h0[di + 1])) o.nombre = h0[di + 1];
+  const route = h0.find(l => /^[^\d:.]{3,90}$/.test(l) && (l.match(/\s[-–]\s/g) || []).length >= 2); if (route) o.destino = route;
+  const sv = clean(sl(/^salidas/).join(' ') || g(/salidas?\s*:\s*([^\n]+)/i)); if (sv) o.salidas = cap1(sv);
+  // incluye / no incluye / condiciones / notas
+  let inc = joinItems(sl(/^incluye/).map(clean)), nin = joinItems(sl(/^no incluye/).map(clean));
+  if (!sk(/^incluye/)) { const f = (head) => { const i = L.findIndex(l => head.test(l)); if (i < 0) return []; const r = []; for (let k = i + 1; k < L.length && !STOP.test(L[k]); k++) r.push(L[k].replace(/^[•·\-–✓✔✗✘\s]+/, '').trim()); return r.filter(Boolean); }; inc = f(/^incluye\b/i); nin = f(/^no incluye\b/i); }
+  if (inc.length) o.incluye = inc; if (nin.length) o.no_incluye = nin;
+  const cl = sl(/^condiciones/).map(clean), ni = cl.findIndex(l => /^notas importantes/i.test(l)), cd = ni >= 0 ? cl.slice(0, ni) : cl, nt = ni >= 0 ? cl.slice(ni + 1) : [];
+  if (cd.length) o.condiciones = sentence(cd.join(' ')); if (nt.length) o.notas = joinItems(nt).join('\n');
+  // tablas
+  const pk = sk(/^precios?/), pl = pk ? sl(/^precios?/) : [], pr = tableRows(pl, true);
+  if (pr.length) {
+    const n = Math.max(...pr.map(r => r.length)); o.tp_titulo = cap1(pk).replace(/\b(usd|mxn|eur)\b/, x => x.toUpperCase()); o.tp_cols = heads('Categoría', pl.join(' '), n);
+    o.tp_filas = pr.map(r => ({ c0: r[0], c1: r[1] || '', c2: r[2] || '', c3: r[3] || '' })); const cu = /usd|mxn|eur/.exec(pk); if (cu) o.moneda = cu[0].toUpperCase();
+    const nota = pl.find(l => /^\*+/.test(l)); if (nota) o.tp_nota = clean(nota.replace(/\*/g, ''));
+  }
+  const hk = sk(/^hoteles/), hl = hk ? sl(/^hoteles/) : [], hr = tableRows(hl, false);
+  if (hr.length) { const n = Math.max(...hr.map(r => r.length)); o.th_titulo = cap1(hk); o.th_cols = heads('Ciudad', hl.join(' '), n); o.th_filas = hr.map(r => ({ c0: r[0], c1: r[1] || '', c2: r[2] || '', c3: r[3] || '' })); }
+  // datos sueltos (mensajes, correos, cotizaciones simples)
+  const hn = g(/hotel\s*[:\-–]\s*([^\n|·]+)/i); if (hn) o.hotel_nombre = hn;
+  const st = /(\d)\s*(?:estrellas?|★)/i.exec(T); if (st) o.estrellas = st[1];
+  const ds = sectioned ? [] : findDates(T); if (ds[0]) o.entrada = ds[0].iso; if (ds[1]) o.salida = ds[1].iso;
+  const ad = g(/(\d+)\s*adultos?/i), me = g(/(\d+)\s*(?:menor(?:es)?|niñ[oa]s?)/i), ed = g(/\(([\d,\sy]+)\s*años?\)/i);
+  if (ad) o.adultos = ad; if (me) o.menores = me; if (ed) o.edades = ed;
+  if (!o.noches) { const no = g(/(\d+)\s*noches?/i); if (no) o.noches = no; }
+  const pl2 = g(/(todo incluido|desayuno incluido|solo hospedaje|media pensi[oó]n|pensi[oó]n completa)/i); if (pl2) o.plan = cap1(pl2);
+  if (!o.moneda) { const cu = g(/\b(MXN|USD|EUR)\b/); if (cu) o.moneda = cu; }
+  const pp = g(/\$\s?([\d,]+(?:\.\d+)?)\s*(?:MXN|USD|EUR)?\s*(?:por|\/|x)\s*persona/i), tt = g(/total[^\d\n$]*\$\s?([\d,]+(?:\.\d{1,2})?)/i);
+  if (pp) { o.p_modo = 'persona'; o.p_unidad = 'persona'; o.p_tarifa = pp; } else if (tt) { o.p_modo = 'total'; o.p_total = tt; }
+  if (!o.destino) { const de = g(/(?:viaje a|destino)\s*[:\-–]\s*([^\n]+)/i); if (de) o.destino = de; }
+  const cn = g(/(?:preparada para|cliente)\s*[:\-–]?\s*([^\n·]+)/i); if (cn) { o.cliente_nombre = cn; o.cliente_mostrar = true; }
+  const fo = g(/\b((?:COT|RES|VV)[-\w]*\d[\w-]*)/); if (fo) o.numero = fo;
+  // plantilla
+  const id = force || state.tpl;
+  fillByTemplate(id, T, L, o, Lt);
+  if (emoji && (id === 'hotel' || id === 'paquete')) Object.entries(emoji).forEach(([k, v]) => { if (v === '' || v == null || (Array.isArray(v) && !v.length)) return; if (k === 'habitaciones') { const ne = r => Object.fromEntries(Object.entries(r).filter(([, x]) => x !== '' && x != null)); o.habitaciones = v.map((r, i) => Object.assign({}, (o.habitaciones || [])[i] || {}, ne(r))); } else o[k] = v; });
+  if (id === 'otro') { o.titulo = o.nombre || L[0] || ''; o.descripcion = L.slice(1).join('\n').slice(0, 1500); }
+  if (days.length && id === 'itinerario') o.itin_dias = days;
+  if (id === 'itinerario') { o.fecha_salida = o.entrada; o.fecha_regreso = o.salida; o.nombre = o.nombre || o.destino || ''; }
+  if (id !== 'hotel' && id !== 'paquete') { delete o.entrada; delete o.salida; }
+  if (id === 'circuito' && !o.nombre) o.nombre = o.destino || '';
+  return { id, data: id === 'hotel' ? SC.migrate('hotel', o) : o, msg: [days.length ? (id === 'itinerario' ? days.length + ' días de itinerario' : 'El itinerario solo se carga en la plantilla Itinerario') : '', pr.length ? 'tabla de tarifas' : '', hr.length ? 'tabla de hoteles' : ''].filter(Boolean).join(', ') + (days.length || pr.length || hr.length ? '.' : '') };
+}
+function busy(on, msg, cls) { $('#impgo').disabled = on; $('#impmsg').textContent = msg || ''; $('#impmsg').className = 'impmsg ' + (cls || ''); }
+function applyImport(id, data, msg) {
+  state.data[id] = SC.sanitize(id, data); state.tpl = id; state.ex[id] = false; syncBanner();
+  renderTemplates(); renderForm(); renderPreview(); scheduleSave(); showView('preview-hint');
+  busy(false, 'Listo: plantilla «' + VV.TEMPLATES[id].name + '». ' + msg + ' Revisa los datos antes de descargar.', 'ok');
+}
+async function runImport() {
+  busy(true, 'Leyendo…');
+  try {
+    let text = $('#imptext').value.trim(), photo = null;
+    for (const f of imp.files) {
+      const r = await readFile(f);
+      if (r.saved) { applyImport(state.tpl, r.saved.data, r.saved.tpl === state.tpl ? 'Datos restaurados exactamente como los guardaste.' : 'Se cargó lo que coincide con esta plantilla.'); return; }
+      text += '\n' + r.text; photo = photo || r.photo;
+    }
+    if (text.replace(/\s/g, '').length < 20) throw new Error(imp.files.length ? 'No encontré texto en el archivo (¿es un PDF escaneado como imagen?). Pega el texto.' : 'Elige un PDF o pega texto primero.');
+    const r = parseDoc(text, state.tpl);
+    applyImport(r.id, r.data, r.msg);
+    const dd = state.data[r.id];
+    if (photo && 'foto' in dd) { dd.foto = await processPhoto(photo); renderForm(); renderPreview(); scheduleSave(); $('#impmsg').textContent += ' Se tomó la foto principal del PDF.'; }
+  } catch (e) { busy(false, e.message || 'No se pudo leer el documento.', 'bad'); console.error(e); }
+}
+
 function setFiles(list) {
   imp.files = Array.from(list || []).slice(0, 4); const box = $('#impfiles'); box.textContent = '';
   imp.files.forEach((f, i) => box.append(h('span', { class: 'chip' }, f.name, h('button', { type: 'button', class: 'icon', 'aria-label': 'Quitar ' + f.name, text: '×', onclick: () => { imp.files.splice(i, 1); setFiles(imp.files); } }))));
@@ -1899,7 +2545,7 @@ function boot() {
   dz.addEventListener('drop', e => setFiles(e.dataTransfer.files));
   $('#tabform').addEventListener('click', () => showView('form'));
   $('#tabprev').addEventListener('click', () => { showView('preview'); window.scrollTo(0, 0); });
-  cap('sample').then(s => { if (!s) { $('#dropzone').hidden = true; $('#impfiles').hidden = true; $('#impautolbl').hidden = true; $('#impnote').hidden = false; $('#impgo').textContent = 'Leer mensaje'; $('#imptextlbl').textContent = 'Pega aquí los datos del hotel'; } });
+  $('#impstop').hidden = true;
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
