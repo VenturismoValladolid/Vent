@@ -901,18 +901,21 @@ function bPax(rows) {
   });
 }
 
-function bDetail(rows) { // etiqueta / valor
-  const rr = rows.filter(r => has(r.etiqueta) && has(r.valor));
+function bDetail(rows) { // etiqueta / valor (+ precio opcional a la derecha, grande y en negritas)
+  const rr = rows.filter(r => has(r.etiqueta) && (has(r.valor) || has(r.precio)));
   if (!rr.length) return null;
-  const laid = rr.map(r => wrap(r.valor, FN.M, 8.8, CW * .58 - 18));
-  const H = 10 + laid.reduce((s, l) => s + Math.max(28, 14 + l.length * 12), 0);
+  const pw = r => has(r.precio) ? tw(FN.B, 12.5, str(r.precio)) + (has(r.cur) ? tw(FN.R, 7, str(r.cur)) + 5 : 0) + 18 : 0;
+  const laid = rr.map(r => wrap(str(r.valor), FN.M, 8.8, CW * .58 - 18 - pw(r)));
+  const rhs = laid.map((l, i) => Math.max(has(rr[i].precio) ? 34 : 28, 14 + Math.max(l.length, 1) * 12));
+  const H = 10 + rhs.reduce((t0, v) => t0 + v, 0);
   return atom(H, (out, y) => {
     card(out, LX, y, CW, H);
     let yy = y + 5;
     rr.forEach((r, i) => {
-      const rh = Math.max(28, 14 + laid[i].length * 12);
+      const rh = rhs[i];
       T(out, LX + 18, yy + 18, str(r.etiqueta), FN.R, 8.3, C.gray);
       laid[i].forEach((ln, k) => T(out, LX + CW * .38, yy + 18 + k * 12, ln, FN.M, 8.8, C.ink));
+      if (has(r.precio)) { let px = RX - 18; if (has(r.cur)) { T(out, px, yy + 19, str(r.cur), FN.R, 7, C.gray, { a: 'r' }); px -= tw(FN.R, 7, str(r.cur)) + 5; } T(out, px, yy + 19.5, str(r.precio), FN.B, 12.5, C.ink, { a: 'r' }); }
       if (i < rr.length - 1) L(out, LX + 12, yy + rh, RX - 12, yy + rh, '#E6E6E8', .8);
       yy += rh;
     });
@@ -1134,7 +1137,7 @@ function roomDetail(d) {
   if (!rooms.length || !(rooms.length > 1 || minors || priced)) return null;
   const cur = str(d.moneda) || 'MXN';
   const px = r => { const a = roomAdults(r), m = num(r.menores); return [a ? plural(a, 'adulto', 'adultos') : '', m ? plural(m, 'menor', 'menores') + (has(r.edades) ? ` (${str(r.edades)})` : '') : ''].filter(Boolean).join(' y '); };
-  return bDetail(rooms.map((r, i) => ({ etiqueta: `Habitación ${i + 1}`, valor: [uniqCI([str(r.ocupacion), str(r.tipo)]).join(' · '), px(r), str(r.observaciones), num(r.precio) ? money(num(r.precio)) + ' ' + cur : ''].filter(Boolean).join(' · ') || ' ' })));
+  return bDetail(rooms.map((r, i) => ({ etiqueta: `Habitación ${i + 1}`, valor: [uniqCI([str(r.ocupacion), str(r.tipo)]).join(' · '), px(r), str(r.observaciones)].filter(Boolean).join(' · '), precio: num(r.precio) ? money(num(r.precio)) : '', cur })));
 }
 function hotelAtoms(d) {
   const a = [];
@@ -1149,14 +1152,20 @@ function hotelAtoms(d) {
   if (!hasPhoto && has(d.hotel_ubicacion) && c) { /* ubicación: dentro del subtítulo del destino */ }
   return a;
 }
+const t12 = h => { const m = /^(\d{1,2}):(\d{2})$/.exec(str(h)); if (!m) return str(h); const H = +m[1]; return `${H % 12 || 12}:${m[2]} ${H >= 12 ? 'pm' : 'am'}`; };
+function escRows(rows, txt, side) {
+  const rs = (rows || []).filter(r => has(r.lugar) || has(r.espera));
+  if (rs.length) return rs.map((r, i) => ({ etiqueta: `Escala${rs.length > 1 ? ' ' + (i + 1) : ''} · ${side}`, valor: [str(r.lugar), has(r.espera) ? 'espera de ' + str(r.espera) : ''].filter(Boolean).join(' · ') }));
+  return has(txt) ? [{ etiqueta: 'Escalas · ' + side, valor: str(txt) }] : [];
+}
 function flightAtoms(d) {
   const a = [], ops = (d.op_vuelos || []).filter(o => has(o.cod_origen) || has(o.ciudad_origen) || has(o.aerolinea) || has(o.fecha_ida) || has(o.ciudad_destino));
   ops.forEach((o, i) => {
     const rt = o.tipo !== 'Solo ida', base = { aerolinea: o.aerolinea, clase: o.clase, checkin: o.checkin, eq_mochila: o.eq_mochila, eq_mano: o.eq_mano, eq_doc: o.eq_doc };
     a.push(bSection([ops.length > 1 ? 'Opción ' + (i + 1) : 'Vuelo', str(o.titulo), rt ? 'Ida y vuelta' : 'Solo ida'].filter(Boolean).join(' · '), 'plane'));
-    a.push(bFlightCard(Object.assign({}, base, { tipo: 'Ida', vuelo: o.vuelo_ida, fecha_salida: o.fecha_ida, hora_salida: o.hora_sal_ida, fecha_llegada: o.fecha_lleg_ida || o.fecha_ida, hora_llegada: o.hora_lleg_ida, cod_salida: o.cod_origen, ciudad_salida: o.ciudad_origen, aer_salida: o.aer_origen, cod_llegada: o.cod_destino, ciudad_llegada: o.ciudad_destino, aer_llegada: o.aer_destino })));
-    if (rt) a.push(bFlightCard(Object.assign({}, base, { tipo: 'Vuelta', vuelo: o.vuelo_vta, fecha_salida: o.fecha_vta, hora_salida: o.hora_sal_vta, fecha_llegada: o.fecha_lleg_vta || o.fecha_vta, hora_llegada: o.hora_lleg_vta, cod_salida: o.cod_destino, ciudad_salida: o.ciudad_destino, aer_salida: o.aer_destino, cod_llegada: o.cod_origen, ciudad_llegada: o.ciudad_origen, aer_llegada: o.aer_origen })));
-    const det = [['Escalas · ida', o.escalas_ida], ['Escalas · vuelta', rt ? o.escalas_vta : ''], ['Código de reservación', o.pnr], ['Incluye', o.incluye], ['Precio de esta opción', o.precio], ['Nota', o.nota]].filter(r => has(r[1])).map(r => ({ etiqueta: r[0], valor: str(r[1]) }));
+    a.push(bFlightCard(Object.assign({}, base, { tipo: 'Ida', vuelo: o.vuelo_ida, duracion: o.duracion_ida, fecha_salida: o.fecha_ida, hora_salida: t12(o.hora_sal_ida), fecha_llegada: o.fecha_lleg_ida || o.fecha_ida, hora_llegada: t12(o.hora_lleg_ida), cod_salida: o.cod_origen, ciudad_salida: o.ciudad_origen, aer_salida: o.aer_origen, cod_llegada: o.cod_destino, ciudad_llegada: o.ciudad_destino, aer_llegada: o.aer_destino })));
+    if (rt) a.push(bFlightCard(Object.assign({}, base, { tipo: 'Vuelta', vuelo: o.vuelo_vta, duracion: o.duracion_vta, fecha_salida: o.fecha_vta, hora_salida: t12(o.hora_sal_vta), fecha_llegada: o.fecha_lleg_vta || o.fecha_vta, hora_llegada: t12(o.hora_lleg_vta), cod_salida: o.cod_destino, ciudad_salida: o.ciudad_destino, aer_salida: o.aer_destino, cod_llegada: o.cod_origen, ciudad_llegada: o.ciudad_origen, aer_llegada: o.aer_origen })));
+    const det = [].concat(escRows(o.esc_ida, o.escalas_ida, 'ida'), rt ? escRows(o.esc_vta, o.escalas_vta, 'vuelta') : [], [['Código de reservación', o.pnr], ['Incluye', o.incluye], ['Precio de esta opción', o.precio], ['Nota', o.nota]].filter(r => has(r[1])).map(r => ({ etiqueta: r[0], valor: str(r[1]) })));
     if (det.length) a.push(bDetail(det));
   });
   return a;
@@ -1165,7 +1174,7 @@ function transferAtoms(d) {
   const a = [], ops = (d.op_traslados || []).filter(o => has(o.origen) || has(o.destino) || has(o.fecha_ida) || has(o.transporte));
   ops.forEach((o, i) => {
     const rt = o.tipo === 'Redondo', pax = has(o.pasajeros) ? plural(num(o.pasajeros), 'pasajero', 'pasajeros') : paxText(d), med = [str(o.transporte), str(o.empresa)].filter(Boolean).join(' · ');
-    const mk = (f, h1, h2) => [{ icon: 'calendar', label: 'Fecha', value: fLong(f), wt: .95 }, { icon: 'clock', label: 'Horario', value: [str(h1), str(h2)].filter(Boolean).join(' → '), wt: .8 }, { icon: 'car', label: 'Medio', value: med, wt: 1.3 }, { icon: 'people', label: 'Pasajeros', value: pax, wt: 1 }];
+    const mk = (f, h1, h2) => [{ icon: 'calendar', label: 'Fecha', value: fLong(f), wt: .95 }, { icon: 'clock', label: 'Horario', value: [t12(h1), t12(h2)].filter(Boolean).join(' → '), wt: .8 }, { icon: 'car', label: 'Medio', value: med, wt: 1.3 }, { icon: 'people', label: 'Pasajeros', value: pax, wt: 1 }];
     a.push(bSection([ops.length > 1 ? 'Opción ' + (i + 1) : 'Traslado', str(o.titulo), rt ? 'Redondo' : 'Sencillo'].filter(Boolean).join(' · '), 'car'));
     a.push(bTransferLeg({ origen: str(o.origen), destino: str(o.destino), tipo: rt ? 'Redondo' : 'Sencillo', strip: mk(o.fecha_ida, o.hora_ida, o.hora_lleg_ida) }));
     if (rt && (has(o.fecha_vta) || has(o.hora_vta))) a.push(bTransferLeg({ origen: str(o.destino), destino: str(o.origen), tipo: 'Regreso', strip: mk(o.fecha_vta, o.hora_vta, o.hora_lleg_vta) }));
@@ -1615,11 +1624,13 @@ const FL_COLS = () => [
   t('vuelo_ida', 'Nº de vuelo (ida)', { w: 4 }), d('fecha_ida', 'Fecha de ida', { w: 4 }), h('hora_sal_ida', 'Salida', { w: 2 }), h('hora_lleg_ida', 'Llegada', { w: 2 }), d('fecha_lleg_ida', 'Llega otro día (opcional)', { w: 12 }),
   t('cod_origen', 'Código origen', { w: 3, ph: 'GDL' }), t('ciudad_origen', 'Ciudad de origen', { w: 9 }), t('aer_origen', 'Aeropuerto de origen', { w: 12 }),
   t('cod_destino', 'Código destino', { w: 3, ph: 'CUN' }), t('ciudad_destino', 'Ciudad de destino', { w: 9 }), t('aer_destino', 'Aeropuerto de destino', { w: 12 }),
-  t('escalas_ida', 'Escalas o duración (ida)', { w: 12, ph: 'ej. Directo · 2 h 18 m' }),
+  t('duracion_ida', 'Duración total del vuelo (ida)', { w: 6, ph: 'ej. 2 h 18 m' }), t('escalas_ida', 'Escalas · resumen', { w: 6, ph: 'ej. Directo' }),
+  rw('esc_ida', 'Escalas de la ida (dónde se hacen y cuánto dura cada una)', [t('lugar', 'Dónde se hace la escala', { w: 8, ph: 'ej. Ciudad de México (MEX)' }), t('espera', 'Cuánto dura', { w: 4, ph: '1 h 20 m' })], { add: 'Agregar escala', item: 'Escala' }),
   t('vuelo_vta', 'Nº de vuelo (vuelta)', { w: 4, showIf: x => x.tipo !== 'Solo ida' }), d('fecha_vta', 'Fecha de vuelta', { w: 4, showIf: x => x.tipo !== 'Solo ida' }),
   h('hora_sal_vta', 'Salida', { w: 2, showIf: x => x.tipo !== 'Solo ida' }), h('hora_lleg_vta', 'Llegada', { w: 2, showIf: x => x.tipo !== 'Solo ida' }), d('fecha_lleg_vta', 'Llega otro día (opcional)', { w: 12, showIf: x => x.tipo !== 'Solo ida' }),
-  t('escalas_vta', 'Escalas o duración (vuelta)', { w: 12, showIf: x => x.tipo !== 'Solo ida' }),
-  t('clase', 'Clase', { w: 4, ph: 'Económica' }), t('checkin', 'Código web check-in', { w: 4 }), t('pnr', 'Código de reservación', { w: 4 }),
+  t('duracion_vta', 'Duración total del vuelo (vuelta)', { w: 6, ph: 'ej. 2 h 35 m', showIf: x => x.tipo !== 'Solo ida' }), t('escalas_vta', 'Escalas · resumen', { w: 6, ph: 'ej. Directo', showIf: x => x.tipo !== 'Solo ida' }),
+  rw('esc_vta', 'Escalas de la vuelta (dónde se hacen y cuánto dura cada una)', [t('lugar', 'Dónde se hace la escala', { w: 8, ph: 'ej. Ciudad de México (MEX)' }), t('espera', 'Cuánto dura', { w: 4, ph: '1 h 20 m' })], { add: 'Agregar escala', item: 'Escala', showIf: x => x.tipo !== 'Solo ida' }),
+  cb('clase', 'Clase', ['Económica', 'Premium economy', 'Business', 'Primera clase'], { w: 4 }), t('checkin', 'Código web check-in', { w: 4 }), t('pnr', 'Código de reservación', { w: 4 }),
   s('eq_mochila', 'Mochila o cartera', BAG, { w: 4 }), s('eq_mano', 'Equipaje de mano', BAG, { w: 4 }), s('eq_doc', 'Equipaje a documentar', BAG, { w: 4 }),
   a('incluye', 'Qué incluye este vuelo', { w: 12, ph: 'ej. Maleta documentada de 23 kg, selección de asiento' }), t('precio', 'Precio de esta opción', { w: 6 }), t('nota', 'Nota', { w: 6 })];
 const TR_COLS = () => [
@@ -1635,6 +1646,7 @@ SCHEMA.vuelo = SCHEMA.vuelo.map(x => x.id === 'vuelos' ? flightSec() : x);
 SCHEMA.paquete = SCHEMA.paquete.flatMap(x => x.id === 'vuelos' ? [flightSec(), transSec()] : [x]);
 SCHEMA.traslado = [SEC.doc(), SEC.cliente(), { id: 'destino', title: 'Destino', fields: [t('destino', 'Destino general (opcional)'), t('pais', 'Estado / país')] }, SEC.viajeros(), SEC.pasajeros(), transSec(), SEC.incluye(), SEC.precio(M_ALL, 'paquete'), SEC.cond()];
 ['paquete'].forEach(id => { const i = SCHEMA[id].findIndex(x => x.id === 'precio'); SCHEMA[id].splice(i + 1, 0, { id: 'menores', title: 'Tarifa de menores', fields: [rw('p_menores', 'Tarifa de menores por edad', [t('edades', 'Edades', { w: 4, ph: 'ej. 0 a 5 años' }), cb('tarifa', 'Tarifa', ['Gratis', 'Misma tarifa que un adulto', '50% de la tarifa de adulto'], { w: 8 }), t('nota', 'Nota', { w: 12 })], { add: 'Agregar rango de edad', item: 'Rango' })] }); });
+const VISTAS = ['Vista al jardín', 'Vista a la alberca', 'Vista parcial al mar', 'Vista al mar', 'Vista a la montaña'];
 const HOT_COLS = () => {
   const per = x => x.p_modo === 'persona', pp = x => x.p_modo === 'persona' || x.p_modo === 'paquete';
   return [
@@ -1643,8 +1655,8 @@ const HOT_COLS = () => {
     s('fecha_modo', 'Cómo mostrar las fechas', [['exacta', 'Fechas exactas'], ['mes', 'Solo mes y año']], { w: 6, def: 'exacta' }),
     d('entrada', 'Entrada', { w: 6 }), d('salida', 'Salida', { w: 6, showIf: x => x.fecha_modo !== 'mes' }), n('noches', 'Noches', { w: 6, showIf: x => x.fecha_modo === 'mes' }),
     ph('foto', 'Fotografía del hotel (opcional)', { w: 12 }),
-    rw('habitaciones', 'Habitaciones y viajeros (Doble = 2 adultos, Triple = 3… los menores se anotan aparte)', [t('tipo', 'Categoría o vista', { w: 6 }), cb('ocupacion', 'Ocupación', ['Sencilla', 'Doble', 'Triple', 'Cuádruple', 'Quíntuple'], { w: 6 }),
-      n('adultos', 'Adultos', { w: 3, ph: 'auto' }), n('menores', 'Menores', { w: 3 }), t('edades', 'Edades de los menores', { w: 6, ph: 'ej. 9 y 10 años' }), t('observaciones', 'Observaciones', { w: 8 }), n('precio', 'Precio', { w: 4 })], { add: 'Agregar habitación', item: 'Habitación' }),
+    rw('habitaciones', 'Habitaciones y viajeros (Doble = 2 adultos, Triple = 3… los menores se anotan aparte)', [s('tipo', 'Vista de la habitación', [['', 'Sin especificar']].concat(VISTAS.map(v => [v, v])), { w: 6 }), cb('ocupacion', 'Ocupación', ['Sencilla', 'Doble', 'Triple', 'Cuádruple', 'Quíntuple'], { w: 6 }),
+      n('adultos', 'Adultos', { w: 3, ph: 'auto' }), n('menores', 'Menores', { w: 3 }), t('edades', 'Edades de los menores', { w: 6, ph: 'ej. 9 y 10 años' }), t('observaciones', 'Observaciones (ej. jacuzzi, junior suite)', { w: 8 }), n('precio', 'Precio', { w: 4 })], { add: 'Agregar habitación', item: 'Habitación' }),
     s('p_modo', 'Precio · cómo se calcula', M_HOTEL, { w: 12, def: 'persona' }),
     t('p_unidad', 'Tarifa por…', { w: 6, ph: 'persona', showIf: per }), n('p_tarifa', 'Tarifa', { w: 6, showIf: pp }),
     c('p_desde', 'Mostrar «Desde»', { w: 12, showIf: pp }), c('p_por_noche', 'La tarifa es por noche (se multiplica por las noches)', { w: 12, showIf: per }),
@@ -1682,8 +1694,23 @@ function coerce(f, v) {
 }
 const P_KEYS = ['p_modo', 'p_unidad', 'p_tarifa', 'p_desde', 'p_por_noche', 'p_cantidad', 'p_menor_modo', 'p_tarifa_menor', 'p_menor_nota', 'p_nota', 'p_lineas', 'p_extras', 'p_manual', 'p_total', 'p_menores'];
 const LEG = ['hotel_nombre', 'estrellas', 'hotel_ubicacion', 'plan', 'fecha_modo', 'entrada', 'salida', 'noches', 'foto', 'habitaciones', 'hoteles_extra'].concat(P_KEYS);
+function vistaOf(t) {
+  const x = String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (/vista\s+parcial/.test(x)) return VISTAS[2]; if (/vista.*jardin/.test(x)) return VISTAS[0]; if (/vista.*(alberca|piscina)/.test(x)) return VISTAS[1];
+  if (/vista.*(mar|oceano)/.test(x)) return VISTAS[3]; if (/vista.*montana/.test(x)) return VISTAS[4]; return '';
+}
+function normHoteles(raw) { // la «vista» solo admite las 5 opciones; lo demás (jacuzzi, suite…) pasa a observaciones
+  let ch = false;
+  const hs = raw.hoteles.map(h => { if (!h || !Array.isArray(h.habitaciones)) return h;
+    const hb = h.habitaciones.map(r => { if (!r || !r.tipo) return r; const v = vistaOf(r.tipo); if (v === r.tipo) return r; ch = true;
+      const rest = String(r.tipo).split(/\s*[,·;]\s*/).filter(x => x && !vistaOf(x)).join(', '), o2 = Object.assign({}, r, { tipo: v });
+      if (rest) o2.observaciones = [rest.charAt(0).toUpperCase() + rest.slice(1), r.observaciones].filter(Boolean).join(' · '); return o2; });
+    return Object.assign({}, h, { habitaciones: hb }); });
+  return ch ? Object.assign({}, raw, { hoteles: hs }) : raw;
+}
 function migrate(id, raw) { // formato anterior de Hotel / playa (un hotel + habitaciones + precio sueltos) → lista de hoteles
-  if (id !== 'hotel' || !raw || (Array.isArray(raw.hoteles) && raw.hoteles.length)) return raw;
+  if (id !== 'hotel' || !raw) return raw;
+  if (Array.isArray(raw.hoteles) && raw.hoteles.length) return normHoteles(raw);
   const filled = k => raw[k] !== undefined && raw[k] !== '' && raw[k] !== null && !(Array.isArray(raw[k]) && !raw[k].length);
   if (!LEG.some(filled)) return raw;
   const first = { nombre: raw.hotel_nombre, estrellas: raw.estrellas, ubicacion: raw.hotel_ubicacion, plan: raw.plan, fecha_modo: raw.fecha_modo || 'exacta', entrada: raw.entrada, salida: raw.salida, noches: raw.noches, foto: raw.foto, habitaciones: raw.habitaciones || [], p_en_total: false };
@@ -1691,7 +1718,7 @@ function migrate(id, raw) { // formato anterior de Hotel / playa (un hotel + hab
   const hb = first.habitaciones = (first.habitaciones || []).map(r => Object.assign({}, r));
   if (parseFloat(raw.adultos) || parseFloat(raw.menores)) { if (!hb.length) hb.push({ adultos: raw.adultos, menores: raw.menores, edades: raw.edades }); else if (hb.length === 1) ['adultos', 'menores', 'edades'].forEach(k => { if (!hb[0][k] && raw[k]) hb[0][k] = raw[k]; }); }
   const extra = (raw.hoteles_extra || []).map(r => { const dg = String(r.precio || '').replace(/[^\d.]/g, ''); return { nombre: r.nombre, estrellas: r.estrellas, ubicacion: r.ubicacion, plan: r.plan, fecha_modo: 'exacta', entrada: r.entrada, salida: r.salida, foto: r.foto, habitaciones: (r.hab || r.ocupacion) ? [{ tipo: r.hab, ocupacion: r.ocupacion }] : [], p_modo: dg ? 'paquete' : 'total', p_tarifa: dg, p_nota: r.precio || '', p_en_total: false }; });
-  const o = Object.assign({}, raw, { hoteles: [first].concat(extra) }); LEG.forEach(k => { delete o[k]; }); o.hoteles = sanRows(SCHEMA.hotel.find(x => x.id === 'hoteles').fields.find(x => x.k === 'hoteles'), o.hoteles); return o;
+  const o = Object.assign({}, raw, { hoteles: [first].concat(extra) }); LEG.forEach(k => { delete o[k]; }); o.hoteles = sanRows(SCHEMA.hotel.find(x => x.id === 'hoteles').fields.find(x => x.k === 'hoteles'), o.hoteles); return normHoteles(o);
 }
 function sanRows(f, v) {
   return (Array.isArray(v) ? v : []).filter(r => r && typeof r === 'object').map(r => { const o = {};
@@ -1721,7 +1748,7 @@ function describe(id, T) {
   });
   return lines.join('\n');
 }
-const API = { SCHEMA, blank, flat, sanitize, describe, defFor, migrate, AV };
+const API = { SCHEMA, blank, flat, sanitize, describe, defFor, migrate, vistaOf, VISTAS, AV };
 if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.VV_SCHEMA = API;
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
@@ -1735,7 +1762,9 @@ VV_EXAMPLES.vuelo.op_vuelos = [{ tipo: 'Ida y vuelta', aerolinea: 'Volaris', vue
 VV_EXAMPLES.traslado.op_traslados = [{ tipo: 'Redondo', transporte: 'Van', empresa: 'Traslados Demo', origen: 'Aeropuerto de Cancún', destino: 'Hotel Riu Cancún', fecha_ida: '2027-03-25', hora_ida: '10:30', fecha_vta: '2027-03-28', hora_vta: '09:00', vehiculo: 'Van Sprinter', pasajeros: '2', incluye: 'Asistencia en aeropuerto', precio: '$1,200 MXN' },
   { tipo: 'Sencillo', transporte: 'Charter', origen: 'Aeropuerto de Cancún', destino: 'Hotel Riu Cancún', fecha_ida: '2027-03-25', hora_ida: '10:30', pasajeros: '2', precio: '$2,400 MXN' }];
 VV_EXAMPLES.paquete.op_vuelos = VV_EXAMPLES.vuelo.op_vuelos.slice(0, 1); VV_EXAMPLES.paquete.op_traslados = VV_EXAMPLES.traslado.op_traslados.slice(0, 1);
-VV_EXAMPLES.hotel.p_menores = [{ edades: '0 a 5 años', tarifa: 'Gratis', nota: 'compartiendo habitación' }, { edades: '6 a 12 años', tarifa: '$1,800 MXN', nota: 'por noche' }];</script>
+VV_EXAMPLES.hotel.p_menores = [{ edades: '0 a 5 años', tarifa: 'Gratis', nota: 'compartiendo habitación' }, { edades: '6 a 12 años', tarifa: '$1,800 MXN', nota: 'por noche' }];
+VV_EXAMPLES.vuelo.op_vuelos[0].duracion_ida = '2 h 18 m'; VV_EXAMPLES.vuelo.op_vuelos[0].duracion_vta = '2 h 35 m';
+VV_EXAMPLES.vuelo.op_vuelos[1].duracion_ida = '4 h 25 m'; VV_EXAMPLES.vuelo.op_vuelos[1].esc_ida = [{ lugar: 'Ciudad de México (MEX)', espera: '1 h 20 m' }]; delete VV_EXAMPLES.vuelo.op_vuelos[1].escalas_ida;</script>
 <script>/* Interfaz del cotizador (usa VV, VV_SCHEMA, VV_EXAMPLES y los datos incrustados VV_ASSETS). */
 (function () {
 'use strict';
@@ -2110,15 +2139,16 @@ function fillHotel(T, L, o) {
   const rg = rangeDates(T);
   if (rg) { o.entrada = rg[0]; o.salida = rg[1]; } else { const e = dateAfter(T, /entrada|check[\s-]?in|llegada/i), s = dateAfter(T, /salida|check[\s-]?out|regreso/i); if (e) o.entrada = e.iso; if (s) o.salida = s.iso; }
   const pl = PLANES.find(x => x[0].test(T)); if (pl) o.plan = pl[1];
-  const oc = OCC.find(x => x[0].test(T)), vi = /vista\s+(?:parcial\s+|total\s+|frontal\s+|lateral\s+)?(?:(?:a|al|a la|a los|a las|del|de la|de)\s+)?[a-záéíóúñ]+/i.exec(T);
-  const ca = /\b(junior suite|master suite|suite|deluxe|superior|est[aá]ndar|standard|premium|king|queen|familiar|presidencial)\b/i.exec(T);
-  const tipo = [ca ? tcase(ca[1]) : '', vi ? cap1(vi[0]) : ''].filter(Boolean).join(' · ');
-  if (tipo || oc) {
+  const oc = OCC.find(x => x[0].test(T));
+  const ca = [...new Set((T.match(/\b(?:junior suite|master suite|suite|deluxe|superior|est[aá]ndar|standard|premium|king|queen|familiar|presidencial|jacuzzi|terraza|balc[oó]n|swim[\s-]?up)\b/gi) || []).map(x => tcase(x)))].sort((x, y) => y.length - x.length).filter((x, i, arr) => !arr.slice(0, i).some(y => y.includes(x)));
+  const tipo = SC.vistaOf(T), obs = ca.join(', ');
+  if (tipo || oc || obs) {
     const nh = Math.min(+g(/(\d+)\s*habitaci[oó]nes/i) || 1, 6), one = nh === 1;
-    o.habitaciones = Array.from({ length: nh }, () => ({ tipo, ocupacion: oc ? oc[1] : '', adultos: one ? (o.adultos || '') : '', menores: one ? (o.menores || '') : '', edades: one ? (o.edades || '') : '', observaciones: '', precio: '' }));
+    o.habitaciones = Array.from({ length: nh }, () => ({ tipo, ocupacion: oc ? oc[1] : '', adultos: one ? (o.adultos || '') : '', menores: one ? (o.menores || '') : '', edades: one ? (o.edades || '') : '', observaciones: obs, precio: '' }));
   }
   if (/por\s+noche/i.test(T) && o.p_modo === 'persona') o.p_por_noche = true;
   const pk = g(/(?:precio\s+(?:del\s+)?paquete|paquete)\s*[:\-–]?\s*\$\s?([\d,]+(?:\.\d+)?)/i); if (pk && !o.p_tarifa) { o.p_modo = 'paquete'; o.p_tarifa = pk; }
+  { const tp = /total\s+para\s+(\d+)\s+personas?/i.exec(T); if (tp && +o.menores > 0 && o.p_modo === 'persona') o.p_menor_modo = +tp[1] >= (+o.adultos || 0) + (+o.menores || 0) ? 'igual' : 'gratis'; }
   const mr = [], re = /(?:menor(?:es)?|niñ[oa]s?|infantes?)([^.\n]{0,60}?)(gratis|sin costo|gratuit[oa]|\$\s?[\d,]+(?:\.\d+)?(?:\s*(?:MXN|USD|EUR))?)/gi; let m;
   while ((m = re.exec(T)) && mr.length < 4) {
     const r1 = /(\d+)\s*(?:a|-|–)\s*(\d+)\s*años?/i.exec(m[1]), r2 = /(?:de|hasta|menor(?:es)? de)\s*(\d+)\s*años?/i.exec(m[1]);
@@ -2156,6 +2186,7 @@ function naturalFlight(b) { // «Sale de X (Aeropuerto) 3 de Mayo - 11:30am, ate
   const a2 = inferIso(m[11], m[12], m[13], r.fecha_ida); if (a2 && a2 !== r.fecha_ida) r.fecha_lleg_ida = a2;
   const v = legRe('regresa|regreso|vuelta|retorno').exec(J);
   if (v) { r.tipo = 'Ida y vuelta'; r.fecha_vta = inferIso(v[3], v[4], v[5], r.fecha_ida); r.hora_sal_vta = time24(v[6], v[7], v[8]); r.hora_lleg_vta = time24(v[14], v[15], v[16]); const a3 = inferIso(v[11], v[12], v[13], r.fecha_vta); if (a3 && a3 !== r.fecha_vta) r.fecha_lleg_vta = a3; }
+  applyLeg(r, legExtras(J.slice(0, v ? v.index : J.length)), 'ida'); if (v) applyLeg(r, legExtras(J.slice(v.index)), 'vta');
   const fl = /vuelo\s+([A-Z0-9]{2})\s?(\d{2,4})\b/.exec(J); if (fl) r.vuelo_ida = fl[1] + ' ' + fl[2];
   const im = /\bincluye\s+(.+?)\.(?=\s|$)/i.exec(J), inc = im ? im[1] : '';
   if (inc) { r.incluye = inc.charAt(0).toUpperCase() + inc.slice(1); r.eq_doc = /maleta\s+documentada|equipaje\s+documentad|maleta\s+de\s+\d+\s*kg/i.test(inc) ? 'si' : 'no'; if (/bolso|mochila|art[ií]culo personal|cartera/i.test(inc)) r.eq_mochila = 'si'; if (/equipaje de mano|maleta de mano|carry/i.test(inc)) r.eq_mano = 'si'; }
@@ -2165,6 +2196,15 @@ function naturalFlight(b) { // «Sale de X (Aeropuerto) 3 de Mayo - 11:30am, ate
   const end = Math.max(pp ? pp.index + pp[0].length : 0, tt ? tt.index + tt[0].length : 0), tail = J.slice(end).replace(/^[^\p{L}]+/u, '').trim(); r._tail = tail.length > 20 && !/^(opci|sale)/i.test(tail) ? tail : '';
   return r;
 }
+const normDur = x => x.replace(/\s*horas?\b/i, ' h').replace(/\s*minutos?\b|\s*min\b/i, ' m').replace(/\s+y\s+/i, ' ').replace(/\s+/g, ' ').trim();
+const DUR = '(\\d+\\s*h(?:oras?)?(?:\\s*(?:y\\s*)?\\d+\\s*m(?:in(?:utos)?)?)?|\\d+\\s*min(?:utos)?)';
+function legExtras(S) { // duración total y escalas (dónde y cuánto dura cada una) de un tramo
+  const dm = new RegExp('duraci[oó]n(?:\\s+total)?(?:\\s+del\\s+vuelo)?\\s*[:\\-–]?\\s*' + DUR, 'i').exec(S), esc = [];
+  const re = new RegExp('(?:escala|conexi[oó]n)\\s+(?:en|:)\\s+([^.,;()\\n]+?)(?:\\s*\\(([^)]*\\d[^)]*)\\)|\\s+(?:de|con)\\s+' + DUR + ')?(?=[.,;\\n]|$)', 'gi'); let m;
+  while ((m = re.exec(S))) esc.push({ lugar: clean(m[1]), espera: normDur((m[2] || m[3] || '').replace(/^de\s+/i, '')) });
+  return { dur: dm ? normDur(dm[1]) : '', esc, res: /directo|sin escalas|nonstop/i.test(S) ? 'Directo' : '' };
+}
+function applyLeg(r, x, k) { if (x.dur) r['duracion_' + k] = x.dur; if (x.esc.length) r['esc_' + k] = x.esc; else if (x.res) r['escalas_' + k] = x.res; }
 function flightFrom(b) {
   const nat = naturalFlight(b); if (nat) return nat;
   const r = {}, [A, V] = splitVuelta(b);
@@ -2175,9 +2215,9 @@ function flightFrom(b) {
   const al = gg(/aerol[ií]nea\s*[:\-–]\s*([^\n|·]+)/i, b) || (AIRL.exec(b) || [''])[0]; if (al) r.aerolinea = tcase(al);
   const cA = codes(A); if (cA[0]) { r.cod_origen = cA[0].code; r.ciudad_origen = cA[0].city; } if (cA[1]) { r.cod_destino = cA[1].code; r.ciudad_destino = cA[1].city; }
   r.vuelo_ida = fn(A); const tA = tm(A); if (tA[0]) r.hora_sal_ida = pad5(tA[0]); if (tA[1]) r.hora_lleg_ida = pad5(tA[1]);
-  const dA = findDates(A); if (dA[0]) r.fecha_ida = dA[0].iso; if (es(A)) r.escalas_ida = es(A);
+  const dA = findDates(A); if (dA[0]) r.fecha_ida = dA[0].iso; applyLeg(r, legExtras(A), 'ida'); if (!r.escalas_ida && !r.esc_ida && es(A)) r.escalas_ida = es(A);
   r.tipo = V || /ida\s*y\s*(?:vuelta|regreso)|redondo|round\s*trip/i.test(b) ? 'Ida y vuelta' : 'Solo ida';
-  if (r.tipo === 'Ida y vuelta') { if (V) { r.vuelo_vta = fn(V); const tV = tm(V), dV = findDates(V); if (tV[0]) r.hora_sal_vta = pad5(tV[0]); if (tV[1]) r.hora_lleg_vta = pad5(tV[1]); if (dV[0]) r.fecha_vta = dV[0].iso; if (es(V)) r.escalas_vta = es(V); } else if (dA[1]) r.fecha_vta = dA[1].iso; }
+  if (r.tipo === 'Ida y vuelta') { if (V) { r.vuelo_vta = fn(V); const tV = tm(V), dV = findDates(V); if (tV[0]) r.hora_sal_vta = pad5(tV[0]); if (tV[1]) r.hora_lleg_vta = pad5(tV[1]); if (dV[0]) r.fecha_vta = dV[0].iso; applyLeg(r, legExtras(V), 'vta'); if (!r.escalas_vta && !r.esc_vta && es(V)) r.escalas_vta = es(V); } else if (dA[1]) r.fecha_vta = dA[1].iso; }
   const cl = /(econ[oó]mica|turista|business|ejecutiva|primera clase|premium)/i.exec(b); if (cl) r.clase = cap1(cl[1]);
   const bag = (re, k) => { const m = re.exec(b); if (m) r[k] = /\b(no incluye|sin)\b[^.\n]*$/i.test(b.slice(Math.max(0, m.index - 40), m.index + m[0].length)) ? 'no' : 'si'; };
   bag(/(?:maleta|equipaje)\s+documentad[oa]|equipaje\s+facturado|\bbodega\b/i, 'eq_doc'); bag(/equipaje de mano|maleta de mano|carry[\s-]?on/i, 'eq_mano'); bag(/mochila|cartera|art[ií]culo personal/i, 'eq_mochila');
@@ -2227,7 +2267,15 @@ function fillByTemplate(id, T, L, o) {
   if ((id === 'vuelo' || id === 'traslado') && (o.op_vuelos || []).length + (o.op_traslados || []).length > 1) { delete o.p_modo; delete o.p_total; delete o.p_tarifa; delete o.p_unidad; }
 }
 
-function parseDoc(text, force) {
+function parseDoc(text, force) { // si el texto trae varias opciones de hotel («Opción 1», «Opción 2»…), cada una pasa a su propio hotel
+  const id = force || state.tpl, bl = id === 'hotel' ? optionBlocks(text) : [text];
+  if (bl.length > 1) {
+    const rs = bl.map(b => parseOne(b, id)), rows = rs.map(r => (r.data.hoteles || [])[0]).filter(Boolean);
+    if (rows.length > 1) return { id, data: Object.assign({}, rs[0].data, { hoteles: rows }), msg: rows.length + ' opciones de hotel, cada una con su habitación y precio.' };
+  }
+  return parseOne(text, force);
+}
+function parseOne(text, force) {
   const emoji = /[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/u.test(text) ? parseMessage(text) : null;
   const FOOT = l => l.replace(/https?:\/\/\S+|www\.\S+/gi, '').replace(/\d{1,2}\/\d{1,2}\/\d{2,4},?\s*\d{1,2}:\d{2}(?:\s*[ap]\.?\s*m\.?)?/gi, '').replace(/p[áa]gina\s+\d+\s+de\s+\d+/gi, '').trim();
   const Lt = text.replace(/\r/g, '').split('\n').map(x => FOOT(x.replace(/[ \u00a0]+/g, ' ').trim()).replace(/^\t+|\t+$/g, '')).filter(Boolean);
@@ -2280,7 +2328,7 @@ function parseDoc(text, force) {
   // plantilla
   const id = force || state.tpl;
   fillByTemplate(id, T, L, o);
-  if (emoji && (id === 'hotel' || id === 'paquete')) Object.entries(emoji).forEach(([k, v]) => { if (v !== '' && v != null && !(Array.isArray(v) && !v.length)) o[k] = v; });
+  if (emoji && (id === 'hotel' || id === 'paquete')) Object.entries(emoji).forEach(([k, v]) => { if (v === '' || v == null || (Array.isArray(v) && !v.length)) return; if (k === 'habitaciones') { const ne = r => Object.fromEntries(Object.entries(r).filter(([, x]) => x !== '' && x != null)); o.habitaciones = v.map((r, i) => Object.assign({}, (o.habitaciones || [])[i] || {}, ne(r))); } else o[k] = v; });
   if (id === 'otro') { o.titulo = o.nombre || L[0] || ''; o.descripcion = L.slice(1).join('\n').slice(0, 1500); }
   if (days.length && id === 'itinerario') o.itin_dias = days;
   if (id === 'itinerario') { o.fecha_salida = o.entrada; o.fecha_regreso = o.salida; o.nombre = o.nombre || o.destino || ''; }
